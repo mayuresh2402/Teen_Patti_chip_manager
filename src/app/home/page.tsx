@@ -5,6 +5,7 @@ import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import { AvatarDisplay } from '@/components/chipstack/AvatarDisplay';
 import { APP_NAME } from '@/lib/constants';
 import { Loader2 } from 'lucide-react';
 
@@ -28,7 +29,6 @@ export default function HomePage() {
   }
   
   if (!userProfile) {
-     // This case should be caught by useEffect, but as a fallback:
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4">
         <p className="text-xl">Redirecting to sign-in...</p>
@@ -39,10 +39,8 @@ export default function HomePage() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4">
       <div className="text-center mb-12">
-        {userProfile?.avatar?.startsWith('<svg') ? (
-            <div className="inline-block h-14 w-14 flex items-center justify-center" dangerouslySetInnerHTML={{ __html: userProfile.avatar }} />
-        ) : (
-            <span className="text-5xl">{userProfile?.avatar || '💰'}</span>
+        {userProfile?.avatar && (
+            <AvatarDisplay avatar={userProfile.avatar} size="large" className="inline-block" />
         )}
         <h1 className="text-4xl font-extrabold mt-4 text-primary text-shadow-lg">Welcome, {userProfile?.nickname}!</h1>
         <p className="text-lg text-muted-foreground mt-2">Ready to manage your chips for Teen Patti?</p>

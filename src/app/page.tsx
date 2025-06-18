@@ -1,9 +1,11 @@
+
 "use client";
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { APP_NAME } from '@/lib/constants';
+import { AvatarDisplay } from '@/components/chipstack/AvatarDisplay';
 
 export default function RootPage() {
   const router = useRouter();
@@ -11,18 +13,14 @@ export default function RootPage() {
 
   useEffect(() => {
     if (!isAuthReady || isLoadingProfile) {
-      return; // Wait until auth state and profile are resolved
+      return; 
     }
 
     if (!userId) {
-      // This case should ideally be handled by anonymous sign-in redirecting to onAuthStateChanged.
-      // If user is truly not signed in (even anonymously), go to signin.
       router.replace('/signin');
     } else if (!userProfile) {
-      // User is signed in (could be anonymous or Google) but has no profile
       router.replace('/signin');
     } else {
-      // User is signed in and has a profile
       router.replace('/home');
     }
   }, [userId, userProfile, isAuthReady, isLoadingProfile, router]);
@@ -30,7 +28,7 @@ export default function RootPage() {
   return (
     <div className="flex items-center justify-center min-h-screen bg-background text-foreground">
       <div className="text-center">
-        <div className="text-7xl mb-4 animate-bounce-slow">💰</div>
+        <AvatarDisplay avatar="💰" size="xlarge" className="mb-4 animate-bounce-slow" />
         <h1 className="text-5xl font-extrabold text-primary text-shadow-lg">{APP_NAME}</h1>
         <p className="text-2xl mt-4 animate-pulse">Loading App & Authenticating...</p>
       </div>

@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { PREDEFINED_AVATARS, APP_NAME } from '@/lib/constants';
 import { saveUserProfile } from '@/app/actions/profile';
 import { useToast } from '@/hooks/use-toast';
+import { AvatarDisplay } from '@/components/chipstack/AvatarDisplay';
 import { Loader2 } from 'lucide-react';
 
 export default function SignInPage() {
@@ -28,11 +29,10 @@ export default function SignInPage() {
       setNicknameInput(userProfile.nickname);
       setSelectedAvatar(userProfile.avatar);
     } else if (user && user.displayName) {
-        // Pre-fill from Google if available and no profile yet
         setNicknameInput(user.displayName.split(' ')[0].slice(0,16));
         setSelectedAvatar(PREDEFINED_AVATARS[0]);
     } else if (PREDEFINED_AVATARS.length > 0) {
-        setSelectedAvatar(PREDEFINED_AVATARS[0]); // Default to first avatar if no profile/user info
+        setSelectedAvatar(PREDEFINED_AVATARS[0]);
     }
   }, [userProfile, user]);
 
@@ -46,17 +46,12 @@ export default function SignInPage() {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       const firebaseUser = result.user;
-      // User state will be updated by onAuthStateChanged in AuthContext.
-      // We can prefill form here based on Google profile.
       setNicknameInput(firebaseUser.displayName?.split(' ')[0].slice(0,16) || firebaseUser.email?.split('@')[0].slice(0,16) || '');
       setSelectedAvatar(PREDEFINED_AVATARS[0]);
-      setIsGuestMode(false); // Ensure not in guest mode
+      setIsGuestMode(false); 
       toast({ title: "Signed in with Google", description: "Please confirm your nickname and avatar." });
-      // AuthContext will fetch profile, if it exists, useEffect will populate.
-      // If not, user confirms and saves.
     } catch (error: any) {
       console.error("Google Sign-In Error:", error);
-      // Check for specific Firebase auth errors
       let errorMessage = "Google Sign-In failed. Please try again.";
       if (error.code === 'auth/popup-closed-by-user') {
         errorMessage = "Sign-in popup closed. Please try again.";
@@ -73,7 +68,6 @@ export default function SignInPage() {
 
   const handleContinueAsGuest = () => {
     setIsGuestMode(true);
-    // Clear potential Google pre-fills if user explicitly chooses guest
     if(!userProfile){
         setNicknameInput('');
         setSelectedAvatar(PREDEFINED_AVATARS[0]);
@@ -90,24 +84,20 @@ export default function SignInPage() {
 
     try {
       if (!userId) {
-        // This implies an anonymous user needs to be established or a Google user logged in
-        // If guest mode, AuthContext's loginAsGuest should handle anonymous user creation if needed
         if (isGuestMode) {
           await loginAsGuest(nicknameInput, selectedAvatar);
         } else {
-          // This case should ideally not happen if Google Sign-In succeeded
           throw new Error("User ID not available. Please sign in again.");
         }
       } else {
-        // userId is available (either from Google or existing anonymous)
         const result = await saveUserProfile(userId, nicknameInput, selectedAvatar);
         if (result.success && result.profile) {
-          await saveProfileToContext(result.profile.nickname, result.profile.avatar); // Update AuthContext
+          await saveProfileToContext(result.profile.nickname, result.profile.avatar);
         } else {
           throw new Error(result.message || "Failed to save profile.");
         }
       }
-      await fetchProfile(); // Re-fetch to ensure AuthContext is up to date
+      await fetchProfile(); 
       toast({ title: "Profile Saved!", description: "Ready to play." });
       router.push('/home');
     } catch (error: any) {
@@ -121,7 +111,7 @@ export default function SignInPage() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4">
       <div className="mb-8 text-center">
-        <div className="text-7xl mb-4 animate-bounce-slow">💰</div>
+        <AvatarDisplay avatar="💰" size="xlarge" className="mb-4 animate-bounce-slow" />
         <h1 className="text-5xl font-extrabold text-primary text-shadow-lg">{APP_NAME}</h1>
         <p className="text-xl text-muted-foreground mt-2">Track. Play. Win. Without Cards.</p>
       </div>
@@ -131,7 +121,7 @@ export default function SignInPage() {
           <CardTitle className="text-center text-2xl">Get Started</CardTitle>
         </CardHeader>
         <CardContent>
-          {!isGuestMode && !userProfile && (!user || user.isAnonymous) && ( // Show Google/Guest options only if not yet decided or not Google signed in
+          {!isGuestMode && !userProfile && (!user || user.isAnonymous) && (
             <div className="space-y-4 mb-6">
               <Button
                 onClick={handleGoogleSignIn}
@@ -154,7 +144,7 @@ export default function SignInPage() {
             </div>
           )}
             
-          {(isGuestMode || user && !user.isAnonymous || userProfile) && ( // Show profile form if guest mode, or Google signed in, or profile exists
+          {(isGuestMode || user && !user.isAnonymous || userProfile) && (
             <>
               <div className="mb-6">
                 <label htmlFor="displayNickname" className="block text-sm font-medium mb-1">
@@ -175,18 +165,14 @@ export default function SignInPage() {
               <div className="mb-8">
                 <label className="block text-sm font-medium mb-2">Choose an Avatar:</label>
                 <div className="flex flex-wrap gap-3 justify-center">
-                  {PREDEFINED_AVATARS.map((avatar, index) => (
+                  {PREDEFINED_AVATARS.map((avatarString, index) => (
                     <button
                       key={index}
-                      onClick={() => setSelectedAvatar(avatar)}
-                      className={`p-2 rounded-lg w-12 h-12 flex items-center justify-center transition-all duration-200 transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-card focus:ring-primary ${selectedAvatar === avatar ? 'bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2 ring-offset-card' : 'bg-muted hover:bg-accent'}`}
+                      onClick={() => setSelectedAvatar(avatarString)}
+                      className={`p-1 rounded-lg flex items-center justify-center transition-all duration-200 transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-card focus:ring-primary ${selectedAvatar === avatarString ? 'bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2 ring-offset-card' : 'bg-muted hover:bg-accent'}`}
                       aria-label={`Select avatar ${index + 1}`}
                     >
-                      {avatar.startsWith('<svg') ? (
-                        <div dangerouslySetInnerHTML={{ __html: avatar }} />
-                      ) : (
-                        <span className="text-2xl sm:text-3xl">{avatar}</span>
-                      )}
+                      <AvatarDisplay avatar={avatarString} size="medium" />
                     </button>
                   ))}
                 </div>

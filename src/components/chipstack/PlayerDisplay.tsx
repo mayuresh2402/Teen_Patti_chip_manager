@@ -4,6 +4,7 @@
 import React from 'react';
 import type { Player } from "@/types/chipstack";
 import { cn } from "@/lib/utils";
+import { AvatarDisplay } from '@/components/chipstack/AvatarDisplay';
 import { Crown, UserCircle, CheckCircle, XCircle, Eye, EyeOff, Hourglass } from "lucide-react";
 
 interface PlayerDisplayProps {
@@ -42,11 +43,7 @@ const PlayerDisplayComponent = ({ player, isCurrentUser, isCurrentTurn, onKick, 
       )}
     >
       <div className="flex items-center space-x-3">
-        {player.avatar.startsWith('<svg') ? (
-            <div className="w-10 h-10 flex items-center justify-center" dangerouslySetInnerHTML={{ __html: player.avatar }} />
-        ) : (
-            <span className="text-3xl sm:text-4xl">{player.avatar}</span>
-        )}
+        <AvatarDisplay avatar={player.avatar} size="medium" />
         <div>
           <p className="text-sm sm:text-base font-medium flex items-center">
             {player.nickname}

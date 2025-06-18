@@ -46,13 +46,13 @@ export default function GamePage() {
 
     const unsubscribeRoom = onSnapshot(roomDocRef, (docSnap) => {
       setIsGameLoading(false);
-      if (docSnap.exists()) {
-        const currentRoomData = { id: docSnap.id, ...docSnap.data() } as Room;
-        setRoomData(currentRoomData);
-        if (currentRoomData.status === 'lobby' || currentRoomData.status === 'round_end') {
-          // If game ends and returns to lobby, or if game is over.
-          const finalRound = currentRoomData.roundCount > currentRoomData.settings.numRounds && currentRoomData.settings.numRounds !== 999;
-          if (finalRound || currentRoomData.status === 'round_end') {
+      const currentRoomDataFromSnapshot = docSnap.exists() ? ({ id: docSnap.id, ...docSnap.data() } as Room) : null;
+      
+      if (currentRoomDataFromSnapshot) {
+        setRoomData(currentRoomDataFromSnapshot); // Update state with new room data
+        if (currentRoomDataFromSnapshot.status === 'lobby' || currentRoomDataFromSnapshot.status === 'round_end') {
+          const finalRound = currentRoomDataFromSnapshot.roundCount > currentRoomDataFromSnapshot.settings.numRounds && currentRoomDataFromSnapshot.settings.numRounds !== 999;
+          if (finalRound || currentRoomDataFromSnapshot.status === 'round_end') {
             toast({ title: "Game Over", description: "The game has concluded. Returning to lobby." });
           } else {
             toast({ title: "Round Ended", description: "Returning to lobby for the next round." });
@@ -75,7 +75,8 @@ export default function GamePage() {
     const unsubscribePlayers = onSnapshot(playersCollectionRef, (snapshot) => {
       const players = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Player));
       setPlayersInRoom(players);
-      // Check if current user is still in the room
+      // Access currentRoomData from state directly within the callback if needed
+      // For this specific check, roomData.status is the key from the current state
       if (roomData && roomData.status === 'in-game' && !players.find(p => p.id === userId)) {
          toast({ title: "Removed", description: "You are no longer in this game.", variant: "destructive" });
          router.replace('/home');
@@ -89,7 +90,7 @@ export default function GamePage() {
       unsubscribeRoom();
       unsubscribePlayers();
     };
-  }, [roomId, userId, userProfile, appId, router, toast, isAuthReady, isLoadingProfile, roomData]);
+  }, [roomId, userId, userProfile, appId, router, toast, isAuthReady, isLoadingProfile]); // Removed roomData from this array
 
 
   const handleTimeout = useCallback(async () => {
@@ -99,7 +100,7 @@ export default function GamePage() {
       await playerAction(roomId, userId, 'pack');
       setIsLoadingAction(false);
     }
-  }, [roomId, userId, roomData, toast]);
+  }, [roomId, userId, roomData, toast]); // roomData is needed here for the conditions
 
 
   if (isGameLoading || !isAuthReady || isLoadingProfile) {

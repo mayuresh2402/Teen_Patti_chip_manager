@@ -5,14 +5,15 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { db as firebaseDb } from '@/lib/firebase';
-import { doc, onSnapshot, collection, deleteDoc } from 'firebase/firestore'; // Added deleteDoc
+import { doc, onSnapshot, collection, deleteDoc } from 'firebase/firestore';
 import type { Room, Player } from '@/types/chipstack';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { startGameAction, kickPlayerAction } from '@/app/actions/room';
 import { PlayerDisplay } from '@/components/chipstack/PlayerDisplay';
-import { ArrowLeft, Copy, Users, Play, LogOut, Trash2, Loader2, Crown } from 'lucide-react'; // Added Crown
+import { AvatarDisplay } from '@/components/chipstack/AvatarDisplay';
+import { ArrowLeft, Copy, Users, Play, LogOut, Trash2, Loader2, Crown } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function LobbyPage() {
@@ -66,8 +67,8 @@ export default function LobbyPage() {
       const players = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Player));
       setPlayersInRoom(players);
       
+      // Access currentRoomData from state for this check
       if (isAuthReady && !isLoadingProfile && userId && roomData && !players.find(p => p.id === userId)) {
-         // User is authenticated & loaded, roomData exists, but user is not in players list
          if (roomData.status !== 'lobby' && (roomData.status !== 'round_end' || (roomData.settings.numRounds !== 999 && roomData.roundCount <= roomData.settings.numRounds))) {
             toast({ title: "Removed", description: "You are no longer in this room.", variant: "destructive" });
             router.replace('/home');
@@ -82,8 +83,7 @@ export default function LobbyPage() {
       unsubscribeRoom();
       unsubscribePlayers();
     };
-  // Removed roomData from dependency array to prevent re-triggering on player list updates when user is removed.
-  }, [roomId, userId, userProfile, appId, router, toast, isAuthReady, isLoadingProfile]);
+  }, [roomId, userId, userProfile, appId, router, toast, isAuthReady, isLoadingProfile]); // Removed roomData from this array
 
 
   const handleStartGame = async () => {
@@ -125,7 +125,7 @@ export default function LobbyPage() {
         setIsLoadingAction(true);
         try {
             const playerDocRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'rooms', roomId, 'players', userId);
-            await deleteDoc(playerDocRef); // Make sure deleteDoc is imported
+            await deleteDoc(playerDocRef);
             toast({ title: "Left Room", description: "You have left the room." });
         } catch (error: any) {
             toast({ title: "Error Leaving Room", description: error.message, variant: "destructive" });
@@ -133,8 +133,6 @@ export default function LobbyPage() {
             setIsLoadingAction(false);
         }
     }
-    // If host leaves, or any other case, redirect to home.
-    // Host leaving and ending room should be handled by a separate "End Room" function or server-side logic if needed.
     router.push('/home');
   };
 
@@ -185,11 +183,7 @@ export default function LobbyPage() {
            <div className="text-center text-sm text-muted-foreground mt-1 flex items-center justify-center space-x-1">
                 <span>Host:</span>
                 {hostPlayer?.avatar ? (
-                    hostPlayer.avatar.startsWith('<svg') ? (
-                        <div className="w-5 h-5 flex items-center justify-center" dangerouslySetInnerHTML={{ __html: hostPlayer.avatar.replace(/width="40"/g, 'width="20"').replace(/height="40"/g, 'height="20"') }} />
-                    ) : (
-                        <span className="text-sm">{hostPlayer.avatar}</span>
-                    )
+                     <AvatarDisplay avatar={hostPlayer.avatar} size="custom" customSizeClasses="w-5 h-5 text-sm" />
                 ) : <Crown className="h-4 w-4 text-yellow-500" /> }
                 <span>{hostPlayer?.nickname || 'N/A'}</span>
             </div>
@@ -209,7 +203,7 @@ export default function LobbyPage() {
                        <PlayerDisplay 
                           player={player} 
                           isCurrentUser={player.id === userId} 
-                          onKick={isHost && player.id !== userId ? handleKickPlayer : undefined} // Host can kick others
+                          onKick={isHost && player.id !== userId ? handleKickPlayer : undefined}
                           isHostView={isHost}
                         />
                     </li>
@@ -239,7 +233,7 @@ export default function LobbyPage() {
                 <h3 className="text-xl font-semibold mb-3 text-foreground/90">Round {roomData.roundCount -1} Ended</h3>
                 <p className="text-muted-foreground mb-3">Ready for the next round?</p>
                  <Button
-                    onClick={handleStartGame} // Re-use start game logic for next round
+                    onClick={handleStartGame} 
                     disabled={isLoadingAction || playersInRoom.length < 2}
                     className="w-full text-lg py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-primary-foreground"
                 >
@@ -265,7 +259,6 @@ export default function LobbyPage() {
             disabled={isLoadingAction}
           >
             <LogOut className="mr-2 h-5 w-5" />
-            {/* Host leaving logic should ideally transfer host or end room explicitly */}
             {isHost ? 'Leave Room (Does Not End Game)' : 'Leave Room'}
           </Button>
         </CardContent>
