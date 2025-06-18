@@ -1,3 +1,4 @@
+
 // This file mimics the global __app_id, __firebase_config, __initial_auth_token
 // from the user's original environment.
 // In a typical Next.js app, these would be loaded from environment variables.
@@ -15,7 +16,7 @@ try {
 // Provide a default fallback if no config is found.
 // Replace with your actual Firebase config.
 export const firebaseConfig = config ?? {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "YOUR_API_KEY",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyBFEzWQmzolSNCfP1c1hxE6dral1QqXQ1E",
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "YOUR_AUTH_DOMAIN",
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "YOUR_PROJECT_ID",
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "YOUR_STORAGE_BUCKET",
