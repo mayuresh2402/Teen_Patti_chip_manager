@@ -1,17 +1,20 @@
 
 "use client";
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { AvatarDisplay } from '@/components/chipstack/AvatarDisplay';
 import { APP_NAME } from '@/lib/constants';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Settings } from 'lucide-react';
+import { UserProfileSettingsPanel } from '@/components/chipstack/UserProfileSettingsPanel';
+import type { UserProfile } from '@/types/chipstack';
 
 export default function HomePage() {
   const router = useRouter();
   const { userId, userProfile, isAuthReady, isLoadingProfile } = useAuth();
+  const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
 
   useEffect(() => {
     if (isAuthReady && !isLoadingProfile && (!userId || !userProfile)) {
@@ -37,7 +40,26 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4">
+    <div className="relative flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="absolute top-4 right-4 text-foreground/80 hover:text-foreground"
+        onClick={() => setIsSettingsPanelOpen(true)}
+        title="Settings"
+      >
+        <Settings className="h-6 w-6" />
+      </Button>
+
+      {userId && userProfile && (
+        <UserProfileSettingsPanel
+          isOpen={isSettingsPanelOpen}
+          onOpenChange={setIsSettingsPanelOpen}
+          currentUserId={userId}
+          currentUserProfile={userProfile}
+        />
+      )}
+
       <div className="text-center mb-12">
         {userProfile?.avatar && (
             <AvatarDisplay avatar={userProfile.avatar} size="large" className="inline-block" />
