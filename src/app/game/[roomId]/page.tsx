@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -17,6 +18,7 @@ import { TurnTimerDisplay } from '@/components/chipstack/TurnTimerDisplay';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ArrowLeft, Loader2, Info } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function GamePage() {
   const router = useRouter();
