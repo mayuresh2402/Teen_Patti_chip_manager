@@ -15,8 +15,9 @@ import { GameLogDisplay } from '@/components/chipstack/GameLogDisplay';
 import { ActionControls } from '@/components/chipstack/ActionControls';
 import { WinnerDeclaration } from '@/components/chipstack/WinnerDeclaration';
 import { TurnTimerDisplay } from '@/components/chipstack/TurnTimerDisplay';
+import { HostSettingsPanel } from '@/components/chipstack/HostSettingsPanel';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ArrowLeft, Loader2, Info } from 'lucide-react';
+import { ArrowLeft, Loader2, Info, SlidersHorizontal } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -29,8 +30,9 @@ export default function GamePage() {
 
   const [roomData, setRoomData] = useState<Room | null>(null);
   const [playersInRoom, setPlayersInRoom] = useState<Player[]>([]);
-  const [isLoadingAction, setIsLoadingAction] = useState(false); // For actions like toggle blind/seen
+  const [isLoadingAction, setIsLoadingAction] = useState(false);
   const [isGameLoading, setIsGameLoading] = useState(true);
+  const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
 
 
   useEffect(() => {
@@ -49,10 +51,10 @@ export default function GamePage() {
       const currentRoomDataFromSnapshot = docSnap.exists() ? ({ id: docSnap.id, ...docSnap.data() } as Room) : null;
       
       if (currentRoomDataFromSnapshot) {
-        setRoomData(currentRoomDataFromSnapshot); // Update state with new room data
+        setRoomData(currentRoomDataFromSnapshot); 
         if (currentRoomDataFromSnapshot.status === 'lobby' || currentRoomDataFromSnapshot.status === 'round_end') {
           const finalRound = currentRoomDataFromSnapshot.roundCount > currentRoomDataFromSnapshot.settings.numRounds && currentRoomDataFromSnapshot.settings.numRounds !== 999;
-          if (finalRound || currentRoomDataFromSnapshot.status === 'round_end') {
+          if (finalRound || (currentRoomDataFromSnapshot.status === 'round_end' && currentRoomDataFromSnapshot.settings.numRounds !== 999 && currentRoomDataFromSnapshot.roundCount > currentRoomDataFromSnapshot.settings.numRounds) ) {
             toast({ title: "Game Over", description: "The game has concluded. Returning to lobby." });
           } else {
             toast({ title: "Round Ended", description: "Returning to lobby for the next round." });
@@ -75,9 +77,8 @@ export default function GamePage() {
     const unsubscribePlayers = onSnapshot(playersCollectionRef, (snapshot) => {
       const players = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Player));
       setPlayersInRoom(players);
-      // Access currentRoomData from state directly within the callback if needed
-      // For this specific check, roomData.status is the key from the current state
-      if (roomData && roomData.status === 'in-game' && !players.find(p => p.id === userId)) {
+      
+      if (roomData && roomData.status === 'in-game' && userId && !players.find(p => p.id === userId)) {
          toast({ title: "Removed", description: "You are no longer in this game.", variant: "destructive" });
          router.replace('/home');
       }
@@ -90,7 +91,7 @@ export default function GamePage() {
       unsubscribeRoom();
       unsubscribePlayers();
     };
-  }, [roomId, userId, userProfile, appId, router, toast, isAuthReady, isLoadingProfile]); // Removed roomData from this array
+  }, [roomId, userId, userProfile, appId, router, toast, isAuthReady, isLoadingProfile]);
 
 
   const handleTimeout = useCallback(async () => {
@@ -100,7 +101,7 @@ export default function GamePage() {
       await playerAction(roomId, userId, 'pack');
       setIsLoadingAction(false);
     }
-  }, [roomId, userId, roomData, toast]); // roomData is needed here for the conditions
+  }, [roomId, userId, roomData, toast]); 
 
 
   if (isGameLoading || !isAuthReady || isLoadingProfile) {
@@ -125,7 +126,7 @@ export default function GamePage() {
   const isMyTurn = roomData.currentTurnPlayerId === userId && currentPlayer?.status === 'playing';
   const activePlayersCount = playersInRoom.filter(p => p.status === 'playing').length;
   const nonBlindActivePlayersCount = playersInRoom.filter(p => p.status === 'playing' && !p.isBlind).length;
-
+  const isHost = roomData.hostId === userId;
 
   return (
     <div className="flex flex-col items-center min-h-screen bg-background text-foreground p-2 sm:p-4 md:p-6">
@@ -136,11 +137,26 @@ export default function GamePage() {
         <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-primary text-shadow-md text-center">
           {roomData.id} - Round {roomData.roundCount}
         </h2>
-        <div className="w-10"> {/* Spacer */} </div>
+        {isHost ? (
+          <Button variant="ghost" size="icon" onClick={() => setIsSettingsPanelOpen(true)} title="Host Settings">
+            <SlidersHorizontal className="h-5 w-5" />
+          </Button>
+        ) : (
+          <div className="w-10 h-10"> {/* Spacer to keep layout consistent */} </div>
+        )}
       </header>
 
+      {isHost && roomData && (
+        <HostSettingsPanel
+          room={roomData}
+          players={playersInRoom}
+          isOpen={isSettingsPanelOpen}
+          onOpenChange={setIsSettingsPanelOpen}
+          currentUserId={userId}
+        />
+      )}
+
       <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Players List - Left Column or Top on Mobile */}
         <aside className="md:col-span-1 space-y-3">
             <h3 className="text-lg font-semibold text-foreground/80 px-1">Players</h3>
             <ScrollArea className="h-[250px] sm:h-[300px] md:h-[calc(100vh-200px)] pr-2">
@@ -155,7 +171,6 @@ export default function GamePage() {
             </ScrollArea>
         </aside>
 
-        {/* Game Area - Center Column or Middle on Mobile */}
         <main className="md:col-span-2 space-y-4">
             <Card className="bg-card/50 shadow-lg">
                 <CardHeader className="text-center pb-2">
@@ -167,7 +182,7 @@ export default function GamePage() {
                          <TurnTimerDisplay 
                             isActive={isMyTurn && !isLoadingAction} 
                             onTimeout={handleTimeout}
-                            keyReset={roomData.currentTurnPlayerId} // Reset timer when turn player changes
+                            keyReset={roomData.currentTurnPlayerId} 
                         />
                     )}
 
@@ -196,7 +211,7 @@ export default function GamePage() {
                             room={roomData}
                             players={playersInRoom}
                             currentUserId={userId}
-                            onWinnerDeclared={() => router.push(`/lobby/${roomId}`)} // Navigate back to lobby
+                            onWinnerDeclared={() => router.push(`/lobby/${roomId}`)} 
                         />
                     )}
                     {roomData.status === 'round_end_by_pack' && (
@@ -218,3 +233,4 @@ export default function GamePage() {
     </div>
   );
 }
+

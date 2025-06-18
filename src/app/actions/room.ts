@@ -42,7 +42,7 @@ export async function createRoomAction(
       nickname: hostNickname,
       chips: Number(settings.startingChips),
       isHost: true,
-      status: 'ready', // Host starts as ready
+      status: 'waiting', 
       avatar: hostAvatar,
       isBlind: true,
       blindTurns: 0,
@@ -100,7 +100,7 @@ export async function joinRoomAction(
       nickname,
       chips: Number(roomData.settings.startingChips),
       isHost: false,
-      status: 'waiting', // New players start as 'waiting'
+      status: 'waiting', 
       avatar,
       isBlind: true,
       blindTurns: 0,
@@ -137,14 +137,13 @@ export async function togglePlayerLobbyStatusAction(
     const currentPlayer = playerSnap.data() as Player;
     const currentRoom = roomSnap.data() as Room;
 
-    if (currentRoom.status !== 'lobby' && currentRoom.status !== 'round_end') { // Allow status change also after round end
+    if (currentRoom.status !== 'lobby' && currentRoom.status !== 'round_end') { 
       return { success: false, message: 'Can only change ready status in the lobby or between rounds.' };
     }
 
     const newStatus = currentPlayer.status === 'ready' ? 'waiting' : 'ready';
     await updateDoc(playerDocRef, { status: newStatus, lastSeen: Date.now() });
 
-    // Add to game log
     const updatedGameLog = [...currentRoom.gameLog, {
       type: 'player_status_change',
       message: `${currentPlayer.nickname} is now ${newStatus}.`,
@@ -187,24 +186,22 @@ export async function startGameAction(
         return { success: false, message: 'At least 2 players must be "ready" to start the game.' };
     }
     
-    // Determine turn order based on ready players only, could be shuffled or host first.
-    // For simplicity, first ready player in the current list (order of joining/host).
     const initialTurnPlayerId = readyPlayers[0]?.id; 
     if (!initialTurnPlayerId) {
         return { success: false, message: 'No ready players found to start the game.' };
     }
 
     await runTransaction(firebaseDb, async (transaction) => {
+        const currentRoundNumber = (roomData.status === 'lobby' && roomData.roundCount === 0) ? 1 : roomData.roundCount + 1;
         transaction.update(roomDocRef, {
             status: 'in-game',
             currentTurnPlayerId: initialTurnPlayerId,
-            roundCount: roomData.status === 'lobby' ? 1 : roomData.roundCount, // Keep roundCount if starting next round
+            roundCount: currentRoundNumber,
             currentPot: roomData.settings.bootAmount * readyPlayers.length,
             lastBet: roomData.settings.bootAmount,
-            gameLog: [...roomData.gameLog, { type: 'game_start', message: `Round ${roomData.status === 'lobby' ? 1 : roomData.roundCount} started by ${playersInRoom.find(p=>p.id === hostId)?.nickname}. Boot: ${roomData.settings.bootAmount}`, timestamp: Date.now() }],
+            gameLog: [...roomData.gameLog, { type: 'game_start', message: `Round ${currentRoundNumber} started by ${playersInRoom.find(p=>p.id === hostId)?.nickname}. Boot: ${roomData.settings.bootAmount}`, timestamp: Date.now() }],
         });
 
-        // Only affect ready players for boot deduction and status change
         for (const player of playersInRoom) {
             const playerDocRef = doc(playersCollectionRef, player.id);
             if (player.status === 'ready') {
@@ -215,9 +212,7 @@ export async function startGameAction(
                     blindTurns: 0,
                 });
             } else {
-                // Players who were not ready (e.g. 'waiting' or other states) remain as they are, or could be set to 'waiting'
-                // For now, they just don't participate in this round if not 'ready'
-                 transaction.update(playerDocRef, { status: 'waiting' }); // Ensure non-ready players are 'waiting'
+                 transaction.update(playerDocRef, { status: 'waiting' }); 
             }
         }
     });
@@ -257,7 +252,6 @@ export async function kickPlayerAction(
 
     await deleteDoc(playerDocRef);
 
-    // Add to game log
     const currentRoomData = roomSnap.data() as Room;
     const updatedGameLog = [...currentRoomData.gameLog, {
       type: 'player_kicked',
@@ -310,26 +304,23 @@ export async function declareWinnerAction(
       const playersQuerySnap = await getDocs(playersCollectionRef); 
       playersQuerySnap.forEach(playerDoc => {
         const playerRef = doc(playersCollectionRef, playerDoc.id);
-        // Only reset status to 'waiting' if player is still in the room (not kicked)
-        // And if player was 'playing' or 'packed'. Those already 'ready' or 'waiting' keep their status.
         const pData = playerDoc.data() as Player;
         if (pData.status === 'playing' || pData.status === 'packed') {
           transaction.update(playerRef, {
-            status: 'waiting', // Reset status to 'waiting' for next round's ready check
+            status: 'waiting', 
             isBlind: true,
             blindTurns: 0,
           });
         }
       });
       
-      const newRoundCount = currentRoom.roundCount + 1;
-      const gameEnded = newRoundCount > currentRoom.settings.numRounds && currentRoom.settings.numRounds !== 999; 
+      const newRoundCount = currentRoom.roundCount; 
+      const gameEnded = currentRoom.settings.numRounds !== 999 && newRoundCount >= currentRoom.settings.numRounds;
 
       transaction.update(roomDocRef, {
-        status: gameEnded ? 'round_end' : 'lobby', // Go to lobby for players to ready up
+        status: gameEnded ? 'round_end' : 'lobby', 
         currentPot: 0,
         lastBet: 0,
-        roundCount: newRoundCount, 
         gameLog: [...currentRoom.gameLog, { 
             type: 'winner_declared', 
             message: `${winnerPlayer.nickname} won round ${currentRoom.roundCount} and ${currentRoom.currentPot} chips!`, 
@@ -386,3 +377,93 @@ export async function getPredictedWinnerAction(
   }
 }
 
+export async function updateRoomSettingsAction(
+  roomId: string,
+  hostId: string,
+  newSettings: Partial<RoomSettings>
+): Promise<{ success: boolean; message?: string }> {
+  if (!firebaseDb || !roomId || !hostId) {
+    return { success: false, message: 'Missing required fields.' };
+  }
+
+  const roomDocRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+  try {
+    const roomSnap = await getDoc(roomDocRef);
+    if (!roomSnap.exists() || roomSnap.data().hostId !== hostId) {
+      return { success: false, message: 'Room not found or you are not the host.' };
+    }
+
+    const currentSettings = roomSnap.data().settings as RoomSettings;
+    const updatedSettings = { ...currentSettings, ...newSettings };
+
+    // Basic validation for settings
+    if (updatedSettings.bootAmount <= 0 || updatedSettings.startingChips <= 0) {
+      return { success: false, message: 'Boot amount and starting chips must be positive.' };
+    }
+    if (updatedSettings.maxPotLimit !== 0 && updatedSettings.maxPotLimit < updatedSettings.bootAmount * 2) {
+      return { success: false, message: 'Max Pot Limit must be 0 (no limit) or at least twice the Boot Amount.' };
+    }
+
+
+    await updateDoc(roomDocRef, { settings: updatedSettings });
+    
+    const currentRoomData = roomSnap.data() as Room;
+     const updatedGameLog = [...currentRoomData.gameLog, {
+      type: 'settings_change',
+      message: `Host updated room settings. Max Pot: ${updatedSettings.maxPotLimit}, Rounds: ${updatedSettings.numRounds}.`,
+      timestamp: Date.now()
+    }];
+    await updateDoc(roomDocRef, { gameLog: updatedGameLog });
+
+    return { success: true, message: 'Room settings updated.' };
+  } catch (error: any) {
+    console.error("Error updating room settings:", error);
+    return { success: false, message: error.message || DEFAULT_ERROR_MESSAGE };
+  }
+}
+
+export async function updatePlayerChipsAction(
+  roomId: string,
+  hostId: string,
+  playerIdToUpdate: string,
+  newChipAmount: number
+): Promise<{ success: boolean; message?: string }> {
+  if (!firebaseDb || !roomId || !hostId || !playerIdToUpdate) {
+    return { success: false, message: 'Missing required fields.' };
+  }
+  if (isNaN(newChipAmount) || newChipAmount < 0) {
+    return { success: false, message: 'Chip amount must be a non-negative number.' };
+  }
+
+  const roomDocRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+  const playerDocRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'rooms', roomId, 'players', playerIdToUpdate);
+
+  try {
+    const roomSnap = await getDoc(roomDocRef);
+    if (!roomSnap.exists() || roomSnap.data().hostId !== hostId) {
+      return { success: false, message: 'Room not found or you are not the host.' };
+    }
+    
+    const playerSnap = await getDoc(playerDocRef);
+    if (!playerSnap.exists()) {
+      return { success: false, message: 'Player not found.' };
+    }
+    const playerNickname = playerSnap.data().nickname;
+
+    await updateDoc(playerDocRef, { chips: Number(newChipAmount) });
+    
+    const currentRoomData = roomSnap.data() as Room;
+    const updatedGameLog = [...currentRoomData.gameLog, {
+      type: 'chips_change',
+      message: `Host updated ${playerNickname}'s chips to ${newChipAmount}.`,
+      playerId: playerIdToUpdate,
+      timestamp: Date.now()
+    }];
+    await updateDoc(roomDocRef, { gameLog: updatedGameLog });
+
+    return { success: true, message: `${playerNickname}'s chips updated to ${newChipAmount}.` };
+  } catch (error: any) {
+    console.error("Error updating player chips:", error);
+    return { success: false, message: error.message || DEFAULT_ERROR_MESSAGE };
+  }
+}
