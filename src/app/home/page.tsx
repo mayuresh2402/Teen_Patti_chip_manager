@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useEffect } from 'react';
@@ -38,7 +39,11 @@ export default function HomePage() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4">
       <div className="text-center mb-12">
-        <span className="text-5xl">{userProfile?.avatar || '💰'}</span>
+        {userProfile?.avatar?.startsWith('<svg') ? (
+            <div className="inline-block h-14 w-14 flex items-center justify-center" dangerouslySetInnerHTML={{ __html: userProfile.avatar }} />
+        ) : (
+            <span className="text-5xl">{userProfile?.avatar || '💰'}</span>
+        )}
         <h1 className="text-4xl font-extrabold mt-4 text-primary text-shadow-lg">Welcome, {userProfile?.nickname}!</h1>
         <p className="text-lg text-muted-foreground mt-2">Ready to manage your chips for Teen Patti?</p>
       </div>

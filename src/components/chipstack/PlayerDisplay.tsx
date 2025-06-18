@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { Player } from "@/types/chipstack";
@@ -40,7 +41,11 @@ export function PlayerDisplay({ player, isCurrentUser, isCurrentTurn, onKick, is
       )}
     >
       <div className="flex items-center space-x-3">
-        <span className="text-3xl sm:text-4xl">{player.avatar}</span>
+        {player.avatar.startsWith('<svg') ? (
+            <div className="w-10 h-10 flex items-center justify-center" dangerouslySetInnerHTML={{ __html: player.avatar }} />
+        ) : (
+            <span className="text-3xl sm:text-4xl">{player.avatar}</span>
+        )}
         <div>
           <p className="text-sm sm:text-base font-medium flex items-center">
             {player.nickname}

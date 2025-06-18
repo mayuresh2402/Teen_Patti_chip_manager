@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -30,6 +31,8 @@ export default function SignInPage() {
         // Pre-fill from Google if available and no profile yet
         setNicknameInput(user.displayName.split(' ')[0].slice(0,16));
         setSelectedAvatar(PREDEFINED_AVATARS[0]);
+    } else if (PREDEFINED_AVATARS.length > 0) {
+        setSelectedAvatar(PREDEFINED_AVATARS[0]); // Default to first avatar if no profile/user info
     }
   }, [userProfile, user]);
 
@@ -73,7 +76,7 @@ export default function SignInPage() {
     // Clear potential Google pre-fills if user explicitly chooses guest
     if(!userProfile){
         setNicknameInput('');
-        setSelectedAvatar('');
+        setSelectedAvatar(PREDEFINED_AVATARS[0]);
     }
     toast({ title: "Guest Mode", description: "Enter a display name and choose an avatar." });
   };
@@ -176,10 +179,14 @@ export default function SignInPage() {
                     <button
                       key={index}
                       onClick={() => setSelectedAvatar(avatar)}
-                      className={`p-2 rounded-lg text-2xl sm:text-3xl w-12 h-12 flex items-center justify-center transition-all duration-200 transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-card focus:ring-primary ${selectedAvatar === avatar ? 'bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2 ring-offset-card' : 'bg-muted hover:bg-accent'}`}
-                      aria-label={`Select avatar ${avatar}`}
+                      className={`p-2 rounded-lg w-12 h-12 flex items-center justify-center transition-all duration-200 transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-card focus:ring-primary ${selectedAvatar === avatar ? 'bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2 ring-offset-card' : 'bg-muted hover:bg-accent'}`}
+                      aria-label={`Select avatar ${index + 1}`}
                     >
-                      {avatar}
+                      {avatar.startsWith('<svg') ? (
+                        <div dangerouslySetInnerHTML={{ __html: avatar }} />
+                      ) : (
+                        <span className="text-2xl sm:text-3xl">{avatar}</span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -202,4 +209,3 @@ export default function SignInPage() {
     </div>
   );
 }
-
