@@ -1,3 +1,4 @@
+
 "use server";
 
 import { doc, updateDoc, runTransaction, getDoc, collection, getDocs } from 'firebase/firestore';
@@ -46,16 +47,16 @@ export async function playerAction(
       let newBlindTurns = currentPlayer.blindTurns;
       let logMessage = "";
 
-      const allPlayersSnap = await getDocs(playersCollectionRef); // Use getDocs instead of transaction.get for collections
+      const allPlayersSnap = await getDocs(playersCollectionRef);
       const allPlayersInRoom = allPlayersSnap.docs.map(d => ({id: d.id, ...d.data()}) as Player);
 
       const activePlayerObjects = allPlayersInRoom.filter(p => p.status === 'playing');
       const activePlayerIdsInOrder = activePlayerObjects
-        .sort((a, b) => allPlayersInRoom.indexOf(a) - allPlayersInRoom.indexOf(b)) // Maintain original order if possible
+        .sort((a, b) => allPlayersInRoom.indexOf(a) - allPlayersInRoom.indexOf(b))
         .map(p => p.id);
       
       const currentPlayerIndexInActive = activePlayerIdsInOrder.indexOf(userId);
-      if (currentPlayerIndexInActive === -1 && actionType !== 'pack') { // Allow pack even if somehow not in active list (edge case)
+      if (currentPlayerIndexInActive === -1 && actionType !== 'pack') {
           throw new Error("Current player is not among active players.");
       }
 
@@ -68,84 +69,83 @@ export async function playerAction(
           if (currentPlayer.chips < betAmount) throw new Error("Not enough chips for Blind Bet.");
           newPlayerChips -= betAmount;
           newPot += betAmount;
-          newLastBet = betAmount; // Blind bet sets the last bet for next blind player
+          newLastBet = betAmount;
           newBlindTurns++;
           logMessage = `${currentPlayer.nickname} bets ${betAmount} (Blind).`;
-          if (newBlindTurns >= 4) { // Auto-seen after 4 blind turns (common rule)
+          if (newBlindTurns >= 4) {
             newIsBlind = false;
             newGameLog.push({ type: 'status_change', message: `${currentPlayer.nickname} is now Seen after 4 blind turns.`, playerId: userId, timestamp: Date.now() });
           }
           break;
         case 'chaal':
           if (currentPlayer.isBlind) throw new Error("You are Blind. Switch to Seen or bet Blind.");
-          betAmount = newLastBet === 0 ? currentRoom.settings.bootAmount * 2 : newLastBet * 2; // Seen bet is 2x last blind bet, or 2x boot if first seen
+          betAmount = newLastBet === 0 ? currentRoom.settings.bootAmount * 2 : newLastBet * 2;
           if (currentPlayer.chips < betAmount) throw new Error("Not enough chips for Chaal.");
           newPlayerChips -= betAmount;
           newPot += betAmount;
-          newLastBet = betAmount / 2; // Next blind player bets half of current seen player's bet
+          newLastBet = betAmount / 2;
           logMessage = `${currentPlayer.nickname} bets ${betAmount} (Chaal).`;
           break;
         case 'raise':
-          if (typeof amount !== 'number' || isNaN(amount) || amount <= (currentPlayer.isBlind ? newLastBet : newLastBet * 2)) {
-            throw new Error(`Raise amount must be greater than current valid bet (${currentPlayer.isBlind ? newLastBet : newLastBet * 2}).`);
+          // Ensure amount is a number and greater than the current valid bet
+          const minValidRaiseBet = currentPlayer.isBlind ? (newLastBet === 0 ? currentRoom.settings.bootAmount : newLastBet) : (newLastBet === 0 ? currentRoom.settings.bootAmount * 2 : newLastBet * 2);
+          if (typeof amount !== 'number' || isNaN(amount) || amount <= minValidRaiseBet) {
+            throw new Error(`Raise amount must be greater than current valid bet (${minValidRaiseBet}).`);
           }
-          if (currentRoom.settings.maxPotLimit > 0 && (newPot + amount) > currentRoom.settings.maxPotLimit) {
-             amount = currentRoom.settings.maxPotLimit - newPot; // Cap bet to max pot limit
-             if (amount <=0) throw new Error("Pot has reached max limit. Cannot raise further.");
-             logMessage = `${currentPlayer.nickname} bets ${amount} (capped by Pot Limit) to raise.`;
-          } else {
-             logMessage = `${currentPlayer.nickname} raises by betting ${amount}.`;
-          }
-          if (currentPlayer.chips < amount) throw new Error("Not enough chips to Raise.");
           
-          newPlayerChips -= amount;
-          newPot += amount;
-          newLastBet = currentPlayer.isBlind ? amount : amount / 2; // Update lastBet based on if current raiser is blind or seen
-          if (currentPlayer.isBlind) newIsBlind = false; // Raising usually makes player seen
+          betAmount = amount; // Use betAmount to store the final amount to be bet
+
+          if (currentRoom.settings.maxPotLimit > 0 && (newPot + betAmount) > currentRoom.settings.maxPotLimit) {
+             betAmount = currentRoom.settings.maxPotLimit - newPot; 
+             if (betAmount <=0) throw new Error("Pot has reached max limit. Cannot raise further.");
+             logMessage = `${currentPlayer.nickname} bets ${betAmount} (capped by Pot Limit) to raise.`;
+          } else {
+             logMessage = `${currentPlayer.nickname} raises by betting ${betAmount}.`;
+          }
+
+          if (currentPlayer.chips < betAmount) throw new Error("Not enough chips to Raise.");
+          
+          newPlayerChips -= betAmount;
+          newPot += betAmount;
+          newLastBet = currentPlayer.isBlind ? betAmount : betAmount / 2; 
+          if (currentPlayer.isBlind) newIsBlind = false; 
           break;
         case 'pack':
           newPlayerStatus = 'packed';
           logMessage = `${currentPlayer.nickname} packed.`;
           break;
         case 'side_show':
-          // Simplified side show: requires 2 other non-blind active players
-          // Actual side show logic (comparison, who pays) is complex and often house-ruled.
-          // This action here just logs it. More complex logic for actual comparison and chip transfer would be needed.
           const eligibleForSideShow = activePlayerObjects.filter(p => p.id !== userId && !p.isBlind);
           if (eligibleForSideShow.length < 1) throw new Error("No eligible players for a Side Show.");
-          // Cost for side show is typically current chaal amount
           betAmount = newLastBet === 0 ? currentRoom.settings.bootAmount * 2 : newLastBet * 2;
           if (currentPlayer.chips < betAmount) throw new Error(`Not enough chips for Side Show (requires ${betAmount}).`);
           newPlayerChips -= betAmount;
           newPot += betAmount;
           logMessage = `${currentPlayer.nickname} paid ${betAmount} and requests a Side Show.`;
-          // TODO: Add actual side show resolution mechanism (e.g. host decides or another UI step)
-          // For now, it's just a bet and log. Next player's turn.
           break;
         case 'show':
           if (activePlayerObjects.length !== 2) throw new Error("Showdown only when 2 players remain.");
-          // Cost for show is typically current chaal amount
           betAmount = newLastBet === 0 ? currentRoom.settings.bootAmount * 2 : newLastBet * 2;
           if (currentPlayer.chips < betAmount) throw new Error(`Not enough chips to Show (requires ${betAmount}).`);
           newPlayerChips -= betAmount;
           newPot += betAmount;
-          if (currentPlayer.isBlind) newIsBlind = false; // Must be seen to call show
+          if (currentPlayer.isBlind) newIsBlind = false;
           logMessage = `${currentPlayer.nickname} paid ${betAmount} and calls for a Showdown!`;
           
+          newGameLog.push({ type: 'action', message: logMessage, playerId: userId, timestamp: Date.now() });
           transaction.update(roomDocRef, {
             status: 'awaiting_winner_declaration',
             currentPot: newPot,
-            lastBet: newLastBet, // lastBet should reflect the cost of show for consistency
-            gameLog: [...newGameLog, { type: 'action', message: logMessage, playerId: userId, timestamp: Date.now() }],
-            currentTurnPlayerId: null, // Host will declare winner
+            lastBet: newLastBet,
+            gameLog: newGameLog,
+            currentTurnPlayerId: null, 
           });
-          transaction.update(playerDocRef, { chips: newPlayerChips, isBlind: newIsBlind, status: 'playing' }); // Player remains playing until winner declared
-          return; // End transaction early for Show
+          transaction.update(playerDocRef, { chips: newPlayerChips, isBlind: newIsBlind, status: 'playing' }); 
+          return; 
       }
       
       newGameLog.push({ type: 'action', message: logMessage, playerId: userId, timestamp: Date.now() });
       
-      // Update player's state
       transaction.update(playerDocRef, {
         chips: newPlayerChips,
         status: newPlayerStatus,
@@ -154,22 +154,35 @@ export async function playerAction(
         lastSeen: Date.now(),
       });
 
-      // Determine next player or if round ends
+      // Check for pot limit reached by any betting action (blind_bet, chaal, raise)
+      if (actionType === 'blind_bet' || actionType === 'chaal' || actionType === 'raise') {
+        if (currentRoom.settings.maxPotLimit > 0 && newPot >= currentRoom.settings.maxPotLimit) {
+          newGameLog.push({ type: 'event', message: `Pot limit of ${currentRoom.settings.maxPotLimit} reached. Showdown!`, timestamp: Date.now() });
+          transaction.update(roomDocRef, {
+            status: 'awaiting_winner_declaration',
+            currentPot: newPot,
+            lastBet: newLastBet, 
+            gameLog: newGameLog,
+            currentTurnPlayerId: null,
+          });
+          return; // End transaction early
+        }
+      }
+
       const remainingPlayers = activePlayerObjects.filter(p => p.id !== userId ? p.status === 'playing' : newPlayerStatus === 'playing');
       
-      if (remainingPlayers.length === 1 && newPlayerStatus !== 'packed') { // If current player made everyone else pack or won
+      if (remainingPlayers.length === 1 && newPlayerStatus !== 'packed') { 
           const winner = remainingPlayers[0];
           transaction.update(doc(playersCollectionRef, winner.id), {
-            chips: winner.chips + newPot, // Winner gets the current pot
+            chips: winner.chips + newPot,
             status: 'ready', isBlind: true, blindTurns: 0,
           });
-          // Other players who packed also reset
            activePlayerObjects.filter(p => p.id !== winner.id).forEach(p => {
               transaction.update(doc(playersCollectionRef, p.id), { status: 'ready', isBlind: true, blindTurns: 0 });
            });
 
           transaction.update(roomDocRef, {
-            status: 'lobby', // Or 'round_end' then to lobby
+            status: 'lobby', 
             currentPot: 0,
             lastBet: 0,
             roundCount: currentRoom.roundCount + 1,
@@ -180,12 +193,11 @@ export async function playerAction(
 
       } else if (newPlayerStatus === 'packed') {
           const stillPlayingAfterPack = activePlayerObjects.filter(p => p.id !== userId && p.status === 'playing');
-          if (stillPlayingAfterPack.length === 1) { // Only one player left after current player packs
+          if (stillPlayingAfterPack.length === 1) { 
                 const winner = stillPlayingAfterPack[0];
                 transaction.update(doc(playersCollectionRef, winner.id), {
                     chips: winner.chips + newPot, status: 'ready', isBlind: true, blindTurns: 0,
                 });
-                // Update packer too
                 transaction.update(playerDocRef, { status: 'ready', isBlind: true, blindTurns: 0 });
 
                 transaction.update(roomDocRef, {
@@ -194,18 +206,14 @@ export async function playerAction(
                     currentTurnPlayerId: null,
                 });
                 return;
-          } else if (stillPlayingAfterPack.length === 0) { // Should not happen if game started with >=2 players
-             // This might mean it's a draw or error state
+          } else if (stillPlayingAfterPack.length === 0) {
              transaction.update(roomDocRef, { status: 'lobby', gameLog: [...newGameLog, {type: 'error', message: 'No active players left after pack.', timestamp: Date.now()}]});
              return;
           }
       }
 
-
-      // Find next turn player ID from active players
       let nextPlayerIdx = (currentPlayerIndexInActive + 1) % activePlayerIdsInOrder.length;
       let attempts = 0;
-      // Ensure the next player is actually 'playing' (not packed during this transaction cycle by other means, though unlikely)
       while (allPlayersInRoom.find(p => p.id === activePlayerIdsInOrder[nextPlayerIdx])?.status !== 'playing' && attempts < activePlayerIdsInOrder.length) {
           nextPlayerIdx = (nextPlayerIdx + 1) % activePlayerIdsInOrder.length;
           attempts++;
@@ -213,20 +221,17 @@ export async function playerAction(
       if (allPlayersInRoom.find(p => p.id === activePlayerIdsInOrder[nextPlayerIdx])?.status === 'playing') {
           nextTurnPlayerId = activePlayerIdsInOrder[nextPlayerIdx];
       } else {
-          // This case means no valid next player found, potentially round end or error
-          // For simplicity, let's log an error and set to lobby; more robust logic might be needed
-          nextTurnPlayerId = null; // This might trigger round end if only one player left
+          nextTurnPlayerId = null;
           newGameLog.push({ type: 'error', message: 'Could not determine next player.', timestamp: Date.now()});
-          currentRoom.status = 'lobby'; // Fallback
+          currentRoom.status = 'lobby'; 
       }
-
 
       transaction.update(roomDocRef, {
         currentPot: newPot,
         lastBet: newLastBet,
         gameLog: newGameLog,
         currentTurnPlayerId: nextTurnPlayerId,
-        status: currentRoom.status, // Keep status as 'in-game' unless changed by win condition
+        status: currentRoom.status,
       });
     });
     return { success: true, message: 'Action performed.' };
@@ -262,21 +267,18 @@ export async function toggleBlindSeenAction(
       return { success: false, message: 'Can only change status during an active game.' };
     }
     if (currentRoom.currentTurnPlayerId !== userId && currentPlayer.isBlind) {
-        // Allow switching to Seen even if not current turn, if player is blind.
-        // But betting actions are only for current turn.
+      // Allow switching to Seen even if not current turn, if player is blind.
     } else if (currentRoom.currentTurnPlayerId !== userId) {
         return { success: false, message: "Not your turn to change seen status this way (already seen)." };
     }
 
-
     if (currentPlayer.isBlind) {
-      await updateDoc(playerDocRef, { isBlind: false, blindTurns: 0 }); // Reset blindTurns when switching to seen
+      await updateDoc(playerDocRef, { isBlind: false, blindTurns: 0 }); 
       await updateDoc(roomDocRef, {
         gameLog: [...currentRoom.gameLog, { type: 'status_change', message: `${currentPlayer.nickname} switched to Seen.`, playerId: userId, timestamp: Date.now() }],
       });
       return { success: true, message: 'You are now Seen!', isBlind: false };
     } else {
-      // Cannot switch from Seen back to Blind during a round
       return { success: false, message: 'You are already Seen. Cannot switch back to Blind mid-round.' };
     }
   } catch (error: any) {
@@ -284,3 +286,5 @@ export async function toggleBlindSeenAction(
     return { success: false, message: error.message || DEFAULT_ERROR_MESSAGE };
   }
 }
+
+    

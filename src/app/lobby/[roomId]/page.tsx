@@ -69,8 +69,14 @@ export default function LobbyPage() {
       const players = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Player));
       setPlayersInRoom(players);
       
+      // Check if current user is still in the players list, if not (and not host just closing room), redirect.
+      // This check is a bit broad, might need refinement based on exact "kicked" vs "room deleted" scenarios.
       if (isAuthReady && !isLoadingProfile && userId && roomData && !players.find(p => p.id === userId)) {
-         if (roomData.status !== 'lobby' && (roomData.status !== 'round_end' || (roomData.settings.numRounds !== 999 && roomData.roundCount <= roomData.settings.numRounds))) {
+         // Only redirect if the room isn't in a state where players might naturally be removed (e.g. game ended)
+         // or if the user isn't the host (who might be in the process of deleting/leaving the room).
+         if (roomData.status !== 'lobby' && 
+             (roomData.status !== 'round_end' || (roomData.settings.numRounds !== 999 && roomData.roundCount <= roomData.settings.numRounds))
+             ) {
             toast({ title: "Removed", description: "You are no longer in this room.", variant: "destructive" });
             router.replace('/home');
          }
@@ -104,6 +110,7 @@ export default function LobbyPage() {
 
     if (result.success) {
       toast({ title: "Game Starting!", description: result.message });
+      // Navigation to game page will be handled by the onSnapshot listener for roomData
     } else {
       toast({ title: "Error", description: result.message || "Failed to start game.", variant: "destructive" });
     }
@@ -126,14 +133,17 @@ export default function LobbyPage() {
         setIsLoadingAction(true);
         try {
             const playerDocRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'rooms', roomId, 'players', userId);
-            await deleteDoc(playerDocRef);
+            await deleteDoc(playerDocRef); // Player removes themselves
             toast({ title: "Left Room", description: "You have left the room." });
+            // No need to update game log here as player is leaving.
         } catch (error: any) {
             toast({ title: "Error Leaving Room", description: error.message, variant: "destructive" });
         } finally {
             setIsLoadingAction(false);
         }
     }
+    // If host leaves, different logic might be needed (e.g., assign new host, or close room).
+    // For simplicity now, host leaving leads to home, room might become orphaned or cleaned up by a function.
     router.push('/home');
   };
 
@@ -155,6 +165,9 @@ export default function LobbyPage() {
       .then(() => toast({ title: "Room Code Copied!", description: roomId }))
       .catch(() => toast({ title: "Copy Failed", description: "Could not copy room code.", variant: "destructive" }));
   };
+  
+  const sortedPlayersForLeaderboard = [...playersInRoom].sort((a, b) => b.chips - a.chips);
+
 
   if (isRoomLoading || !isAuthReady || isLoadingProfile) {
     return (
@@ -166,6 +179,7 @@ export default function LobbyPage() {
   }
 
   if (!roomData) {
+    // This case should ideally be handled by the onSnapshot redirecting if room is deleted.
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4">
         <p className="text-xl">Room not found or error loading room.</p>
@@ -214,14 +228,17 @@ export default function LobbyPage() {
             ) : (
               <ScrollArea className="h-[calc(100vh-550px)] sm:h-[250px] md:min-h-[180px] pr-3">
                 <ul className="space-y-3">
-                  {playersInRoom.map((player) => (
-                    <li key={player.id}>
-                       <PlayerDisplay 
-                          player={player} 
-                          isCurrentUser={player.id === userId} 
-                          onKick={isHost && player.id !== userId ? handleKickPlayer : undefined}
-                          isHostView={isHost}
-                        />
+                  {sortedPlayersForLeaderboard.map((player, index) => (
+                    <li key={player.id} className="flex items-center space-x-2">
+                       <span className="font-semibold text-lg w-8 text-center text-primary">#{index + 1}</span>
+                       <div className="flex-grow">
+                            <PlayerDisplay 
+                                player={player} 
+                                isCurrentUser={player.id === userId} 
+                                onKick={isHost && player.id !== userId ? handleKickPlayer : undefined}
+                                isHostView={isHost}
+                            />
+                       </div>
                     </li>
                   ))}
                 </ul>
@@ -251,7 +268,7 @@ export default function LobbyPage() {
                 className="w-full text-lg py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-primary-foreground"
               >
                 {isLoadingAction ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Play className="mr-2 h-5 w-5" />}
-                {roomData.status === 'lobby' ? `Start Game (Round ${roomData.roundCount + 1})` : `Start Next Round (${roomData.roundCount})`}
+                {roomData.status === 'lobby' ? `Start Game (Round ${roomData.roundCount + 1})` : `Start Next Round (${roomData.roundCount +1})`} 
               </Button>
               {playersInRoom.filter(p => p.status === 'ready').length < 2 && <p className="text-xs text-destructive text-center mt-2">Need at least 2 "Ready" players to start.</p>}
             </div>
@@ -276,7 +293,6 @@ export default function LobbyPage() {
           >
             <LogOut className="mr-2 h-5 w-5" />
             {isHost && !isGameFullyOver ? 'Leave Room (Ends Game for All)' : 'Leave Room'} 
-            {/* Simplified Host Leave Logic: For now, host leaving implies room closure or could be more nuanced */}
           </Button>
           {isHost && !isGameFullyOver && <p className="text-xs text-muted-foreground text-center mt-1">If the host leaves, the room might be closed.</p>}
         </CardContent>
@@ -284,3 +300,5 @@ export default function LobbyPage() {
     </div>
   );
 }
+
+    
