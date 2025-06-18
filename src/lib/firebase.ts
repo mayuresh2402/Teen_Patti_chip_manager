@@ -7,22 +7,26 @@ let app: FirebaseApp;
 let auth: Auth;
 let db: Firestore;
 
-if (getApps().length === 0 && firebaseConfig.apiKey !== "YOUR_API_KEY") {
+if (getApps().length === 0) {
+  // If no apps are initialized, always try to initialize.
+  // The warning about placeholder keys is handled in firebaseConfig.ts.
+  // If apiKey is a placeholder, initializeApp will still run.
+  // This prevents auth from being undefined, addressing the immediate error.
   try {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
   } catch (error) {
     console.error("Failed to initialize Firebase:", error);
-    // Set to null or throw an error, depending on how you want to handle init failure
-    // For now, components trying to use auth/db will get undefined if init fails.
+    // If initializeApp itself fails (e.g., due to a malformed config object),
+    // auth and db might remain undefined. In this case, the error
+    // in AuthContext.tsx ("Firebase auth is not initialized.") would still be relevant.
   }
-} else if (getApps().length > 0) {
+} else {
+  // App is already initialized, get the existing instance.
   app = getApps()[0];
   auth = getAuth(app);
   db = getFirestore(app);
-} else {
-    console.warn("Firebase not initialized due to missing configuration.");
 }
 
 export { app, auth, db };
