@@ -49,7 +49,7 @@ export default function LobbyPage() {
         setRoomData(currentRoomData);
         if (currentRoomData.status === 'in-game') {
             router.replace(`/game/${roomId}`);
-        } else if (currentRoomData.status === 'round_end' && (currentRoomData.settings.numRounds !== 999 && currentRoomData.roundCount > currentRoomData.settings.numRounds)) {
+        } else if (currentRoomData.status === 'round_end' && (currentRoomData.settings.numRounds !== 999 && currentRoomData.roundCount >= currentRoomData.settings.numRounds)) {
              toast({ title: "Game Over", description: "The game has concluded. All rounds played." });
         }
       } else {
@@ -66,20 +66,23 @@ export default function LobbyPage() {
     });
 
     const unsubscribePlayers = onSnapshot(playersCollectionRef, (snapshot) => {
-      const players = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Player));
-      setPlayersInRoom(players);
+      const currentPlayers = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Player));
+      setPlayersInRoom(currentPlayers);
       
-      // Check if current user is still in the players list, if not (and not host just closing room), redirect.
-      // This check is a bit broad, might need refinement based on exact "kicked" vs "room deleted" scenarios.
-      if (isAuthReady && !isLoadingProfile && userId && roomData && !players.find(p => p.id === userId)) {
-         // Only redirect if the room isn't in a state where players might naturally be removed (e.g. game ended)
-         // or if the user isn't the host (who might be in the process of deleting/leaving the room).
-         if (roomData.status !== 'lobby' && 
-             (roomData.status !== 'round_end' || (roomData.settings.numRounds !== 999 && roomData.roundCount <= roomData.settings.numRounds))
-             ) {
-            toast({ title: "Removed", description: "You are no longer in this room.", variant: "destructive" });
-            router.replace('/home');
-         }
+      // Check if current user is still in the players list after an update.
+      // This needs to be inside the callback to use the latest `currentPlayers` and `roomData` from state.
+      if (userId && roomData) { // Ensure roomData is loaded before this check
+        const playerStillInRoom = currentPlayers.find(p => p.id === userId);
+        if (!playerStillInRoom) {
+            // Only redirect if the room is not in a state where players might naturally be removed
+            // and the user isn't the host (who might be closing the room).
+            if (roomData.status !== 'lobby' && 
+                (roomData.status !== 'round_end' || (roomData.settings.numRounds !== 999 && roomData.roundCount < roomData.settings.numRounds)) &&
+                roomData.hostId !== userId) {
+               toast({ title: "Removed", description: "You are no longer in this room.", variant: "destructive" });
+               router.replace('/home');
+            }
+        }
       }
     }, (error) => {
       console.error("Error listening to players:", error);
@@ -90,7 +93,7 @@ export default function LobbyPage() {
       unsubscribeRoom();
       unsubscribePlayers();
     };
-  }, [roomId, userId, userProfile, appId, router, toast, isAuthReady, isLoadingProfile, roomData]); // Added roomData to dependency array for the player kick check
+  }, [roomId, userId, appId, router, toast, isAuthReady, isLoadingProfile, userProfile]);
 
 
   const handleStartGame = async () => {
@@ -99,7 +102,7 @@ export default function LobbyPage() {
       return;
     }
     const readyPlayersCount = playersInRoom.filter(p => p.status === 'ready').length;
-    if (readyPlayersCount === 0) { // Changed from readyPlayersCount < 2
+    if (readyPlayersCount === 0) {
       toast({ title: "Not Enough Ready Players", description: "At least 1 player must be 'Ready' to start.", variant: "destructive" });
       return;
     }
@@ -110,7 +113,6 @@ export default function LobbyPage() {
 
     if (result.success) {
       toast({ title: "Game Starting!", description: result.message });
-      // Navigation to game page will be handled by the onSnapshot listener for roomData
     } else {
       toast({ title: "Error", description: result.message || "Failed to start game.", variant: "destructive" });
     }
@@ -133,17 +135,14 @@ export default function LobbyPage() {
         setIsLoadingAction(true);
         try {
             const playerDocRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'rooms', roomId, 'players', userId);
-            await deleteDoc(playerDocRef); // Player removes themselves
+            await deleteDoc(playerDocRef);
             toast({ title: "Left Room", description: "You have left the room." });
-            // No need to update game log here as player is leaving.
         } catch (error: any) {
             toast({ title: "Error Leaving Room", description: error.message, variant: "destructive" });
         } finally {
             setIsLoadingAction(false);
         }
     }
-    // If host leaves, different logic might be needed (e.g., assign new host, or close room).
-    // For simplicity now, host leaving leads to home, room might become orphaned or cleaned up by a function.
     router.push('/home');
   };
 
@@ -179,7 +178,6 @@ export default function LobbyPage() {
   }
 
   if (!roomData) {
-    // This case should ideally be handled by the onSnapshot redirecting if room is deleted.
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4">
         <p className="text-xl">Room not found or error loading room.</p>
@@ -191,7 +189,14 @@ export default function LobbyPage() {
   const isHost = roomData.hostId === userId;
   const hostPlayer = playersInRoom.find(p => p.id === roomData.hostId);
   const currentPlayer = playersInRoom.find(p => p.id === userId);
-  const isGameFullyOver = roomData.status === 'round_end' && (roomData.settings.numRounds !== 999 && roomData.roundCount >= roomData.settings.numRounds); // Changed > to >= for roundCount comparison
+  const isGameFullyOver = roomData.status === 'round_end' && (roomData.settings.numRounds !== 999 && roomData.roundCount >= roomData.settings.numRounds);
+
+  const startGameButtonText = () => {
+    if (roomData.status === 'lobby' && roomData.roundCount === 0) {
+      return `Start Game (Round 1)`;
+    }
+    return `Start Next Round (${roomData.roundCount + 1})`;
+  };
 
   return (
     <div className="flex flex-col items-center min-h-screen bg-background text-foreground p-4 sm:p-6">
@@ -268,7 +273,7 @@ export default function LobbyPage() {
                 className="w-full text-lg py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-primary-foreground"
               >
                 {isLoadingAction ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Play className="mr-2 h-5 w-5" />}
-                {roomData.status === 'lobby' ? `Start Game (Round ${roomData.roundCount + 1})` : `Start Next Round (${roomData.roundCount +1})`} 
+                {startGameButtonText()}
               </Button>
               {playersInRoom.filter(p => p.status === 'ready').length === 0 && <p className="text-xs text-destructive text-center mt-2">Need at least 1 "Ready" player to start.</p>}
             </div>
@@ -300,5 +305,4 @@ export default function LobbyPage() {
     </div>
   );
 }
-
     

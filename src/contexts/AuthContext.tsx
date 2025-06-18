@@ -7,7 +7,6 @@ import { type Firestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth as firebaseAuth, db as firebaseDb } from '@/lib/firebase';
 import { appId, initialAuthToken } from '@/lib/firebaseConfig';
 import type { UserProfile } from '@/types/chipstack';
-// import { PREDEFINED_AVATARS } from '@/lib/constants'; // No longer needed here
 
 interface AuthContextType {
   auth: Auth | null;
@@ -21,7 +20,7 @@ interface AuthContextType {
   loginAsGuest: (nickname: string, avatar: string) => Promise<void>;
   saveProfile: (nickname: string, avatar: string) => Promise<void>;
   fetchProfile: () => Promise<void>;
-  logout: () => Promise<void>; // Added logout function
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -42,7 +41,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
-      setIsLoadingProfile(true); // Start loading profile state
+      setIsLoadingProfile(true);
       if (firebaseUser) {
         setUser(firebaseUser);
         setUserId(firebaseUser.uid);
@@ -59,28 +58,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setUserProfile(null);
         }
       } else {
-        // No user signed in
         setUser(null);
         setUserId(null);
         setUserProfile(null);
-        // Attempt auto-sign-in if not already tried or if specifically configured
-        // For this app, initial sign-in page handles Google/Guest, so direct auto-sign-in here might be redundant
-        // unless there's a custom token flow.
-        // For simplicity, if no user, they will be redirected by page guards.
-         try {
-          if (initialAuthToken) {
-            await signInWithCustomToken(firebaseAuth, initialAuthToken);
-            // onAuthStateChanged will run again
-          } else if (!firebaseAuth.currentUser) { // Only sign in anonymously if no user at all
-            await signInAnonymously(firebaseAuth);
-            // onAuthStateChanged will run again
-          }
-        } catch (error) {
-          console.error("Firebase auto-sign-in error:", error);
-          // Ensure state is cleared if auto sign-in fails
-          setUser(null);
-          setUserId(null);
-          setUserProfile(null);
+        // Removed automatic signInAnonymously. User should explicitly sign in via /signin page.
+        // If initialAuthToken is present, it implies an existing session (e.g., from server-side context).
+        if (initialAuthToken) {
+            try {
+                await signInWithCustomToken(firebaseAuth, initialAuthToken);
+                // onAuthStateChanged will run again if successful
+            } catch (error) {
+                console.error("Firebase custom token sign-in error:", error);
+            }
         }
       }
       setIsAuthReady(true);
@@ -104,13 +93,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const loginAsGuest = async (nickname: string, avatar: string) => {
     let currentUserId = userId;
-    if (!currentUserId) {
+    if (!currentUserId || (user && user.isAnonymous && !userProfile)) { // Ensure new guest or existing anon without profile
         if (firebaseAuth) {
             try {
-                const cred = await signInAnonymously(firebaseAuth);
-                currentUserId = cred.user.uid; 
-                setUser(cred.user); // Manually set user and ID for immediate use
-                setUserId(currentUserId);
+                // If current user is already anonymous, don't re-sign in, just ensure UID is set for profile save
+                if (!user || !user.isAnonymous) { 
+                    const cred = await signInAnonymously(firebaseAuth);
+                    currentUserId = cred.user.uid; 
+                    setUser(cred.user);
+                    setUserId(currentUserId);
+                } else {
+                    currentUserId = user.uid; // Use existing anonymous user's ID
+                    setUserId(user.uid); // Ensure userId state is set
+                }
             } catch (error) {
                 console.error("Error during guest anonymous sign-in:", error);
                 throw new Error("Failed to initialize guest session.");
@@ -119,7 +114,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
              throw new Error("Firebase auth not available for guest sign-in.");
         }
     }
-    // After ensuring a user (anonymous or existing) is set
+    
     if (currentUserId) {
       setIsLoadingProfile(true);
       const profileData: UserProfile = { nickname, avatar, createdAt: Date.now() };
@@ -156,8 +151,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       throw new Error("Firebase auth is not initialized.");
     }
     await signOut(firebaseAuth);
-    // onAuthStateChanged will handle resetting user, userId, and userProfile
-    // and subsequent navigation will be handled by page guards.
   };
 
   return (
@@ -173,7 +166,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         loginAsGuest,
         saveProfile,
         fetchProfile,
-        logout // Provide logout function
+        logout
     }}>
       {children}
     </AuthContext.Provider>

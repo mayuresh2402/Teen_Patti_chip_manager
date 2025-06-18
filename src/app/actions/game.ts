@@ -30,7 +30,7 @@ export async function playerAction(
         throw new Error('Room or player not found.');
       }
 
-      const currentRoom = roomSnap.data() as Room;
+      let currentRoom = roomSnap.data() as Room;
       const currentPlayer = playerSnap.data() as Player;
 
       if (currentRoom.status !== 'in-game') throw new Error('Game is not active.');
@@ -48,18 +48,18 @@ export async function playerAction(
       let logMessage = "";
 
       const allPlayersSnap = await getDocs(playersCollectionRef);
-      const allPlayersInRoom = allPlayersSnap.docs.map(d => ({id: d.id, ...d.data()}) as Player);
+      // Important: Maintain a consistent player order for turn progression if not explicitly stored.
+      // For simplicity, we'll use the order from getDocs, but a more robust solution might involve a 'playerOrder' field.
+      const allPlayersInRoomUnsorted = allPlayersSnap.docs.map(d => ({id: d.id, ...d.data()}) as Player);
+      // Create a stable sort order based on when players initially joined or a predefined order if available.
+      // Here, we use the existing order from playersInRoom (which is based on document ID or Firestore's internal ordering)
+      // This is a simplification. A real game might store turn order explicitly.
+      const playerOrderReference = currentRoom.playerOrder || allPlayersInRoomUnsorted.map(p => p.id);
+      const allPlayersInRoom = [...allPlayersInRoomUnsorted].sort((a, b) => playerOrderReference.indexOf(a.id) - playerOrderReference.indexOf(b.id));
 
-      const activePlayerObjects = allPlayersInRoom.filter(p => p.status === 'playing');
-      const activePlayerIdsInOrder = activePlayerObjects
-        .sort((a, b) => allPlayersInRoom.indexOf(a) - allPlayersInRoom.indexOf(b))
-        .map(p => p.id);
+
+      let activePlayerObjects = allPlayersInRoom.filter(p => p.status === 'playing');
       
-      const currentPlayerIndexInActive = activePlayerIdsInOrder.indexOf(userId);
-      if (currentPlayerIndexInActive === -1 && actionType !== 'pack') {
-          throw new Error("Current player is not among active players.");
-      }
-
       let betAmount = 0;
 
       switch (actionType) {
@@ -83,17 +83,16 @@ export async function playerAction(
           if (currentPlayer.chips < betAmount) throw new Error("Not enough chips for Chaal.");
           newPlayerChips -= betAmount;
           newPot += betAmount;
-          newLastBet = betAmount / 2;
+          newLastBet = betAmount / 2; // For next blind player
           logMessage = `${currentPlayer.nickname} bets ${betAmount} (Chaal).`;
           break;
         case 'raise':
-          // Ensure amount is a number and greater than the current valid bet
           const minValidRaiseBet = currentPlayer.isBlind ? (newLastBet === 0 ? currentRoom.settings.bootAmount : newLastBet) : (newLastBet === 0 ? currentRoom.settings.bootAmount * 2 : newLastBet * 2);
           if (typeof amount !== 'number' || isNaN(amount) || amount <= minValidRaiseBet) {
             throw new Error(`Raise amount must be greater than current valid bet (${minValidRaiseBet}).`);
           }
           
-          betAmount = amount; // Use betAmount to store the final amount to be bet
+          betAmount = amount;
 
           if (currentRoom.settings.maxPotLimit > 0 && (newPot + betAmount) > currentRoom.settings.maxPotLimit) {
              betAmount = currentRoom.settings.maxPotLimit - newPot; 
@@ -108,40 +107,47 @@ export async function playerAction(
           newPlayerChips -= betAmount;
           newPot += betAmount;
           newLastBet = currentPlayer.isBlind ? betAmount : betAmount / 2; 
-          if (currentPlayer.isBlind) newIsBlind = false; 
+          if (currentPlayer.isBlind) { // Player becomes Seen after raising blind
+            newIsBlind = false;
+            newGameLog.push({ type: 'status_change', message: `${currentPlayer.nickname} is now Seen after raising blind.`, playerId: userId, timestamp: Date.now() });
+          }
           break;
         case 'pack':
           newPlayerStatus = 'packed';
           logMessage = `${currentPlayer.nickname} packed.`;
+          // Active players will be re-evaluated after this action
           break;
         case 'side_show':
           const eligibleForSideShow = activePlayerObjects.filter(p => p.id !== userId && !p.isBlind);
-          if (eligibleForSideShow.length < 1) throw new Error("No eligible players for a Side Show.");
+          if (eligibleForSideShow.length < 1) throw new Error("No eligible players for a Side Show."); // Server-side rule, client may be stricter
           betAmount = newLastBet === 0 ? currentRoom.settings.bootAmount * 2 : newLastBet * 2;
           if (currentPlayer.chips < betAmount) throw new Error(`Not enough chips for Side Show (requires ${betAmount}).`);
+          if (currentPlayer.isBlind) throw new Error("Blind players cannot request a Side Show.");
           newPlayerChips -= betAmount;
           newPot += betAmount;
           logMessage = `${currentPlayer.nickname} paid ${betAmount} and requests a Side Show.`;
+          // Note: Full side show logic (asking other player, comparing hands) is complex and not implemented here.
+          // This action currently just logs and deducts chips.
           break;
         case 'show':
           if (activePlayerObjects.length !== 2) throw new Error("Showdown only when 2 players remain.");
-          betAmount = newLastBet === 0 ? currentRoom.settings.bootAmount * 2 : newLastBet * 2;
+          betAmount = newLastBet === 0 ? currentRoom.settings.bootAmount * 2 : newLastBet * 2; // Cost to call show
           if (currentPlayer.chips < betAmount) throw new Error(`Not enough chips to Show (requires ${betAmount}).`);
           newPlayerChips -= betAmount;
           newPot += betAmount;
-          if (currentPlayer.isBlind) newIsBlind = false;
+          if (currentPlayer.isBlind) newIsBlind = false; // Player becomes seen for show
           logMessage = `${currentPlayer.nickname} paid ${betAmount} and calls for a Showdown!`;
           
           newGameLog.push({ type: 'action', message: logMessage, playerId: userId, timestamp: Date.now() });
           transaction.update(roomDocRef, {
             status: 'awaiting_winner_declaration',
             currentPot: newPot,
-            lastBet: newLastBet,
+            lastBet: newLastBet, // This 'lastBet' is the cost of showing, not the ongoing game bet
             gameLog: newGameLog,
             currentTurnPlayerId: null, 
           });
           transaction.update(playerDocRef, { chips: newPlayerChips, isBlind: newIsBlind, status: 'playing' }); 
-          return; 
+          return; // End transaction, winner declaration handles next state
       }
       
       newGameLog.push({ type: 'action', message: logMessage, playerId: userId, timestamp: Date.now() });
@@ -153,6 +159,13 @@ export async function playerAction(
         blindTurns: newBlindTurns,
         lastSeen: Date.now(),
       });
+
+      // Update active players list *after* current player's action (especially if they packed)
+      activePlayerObjects = allPlayersInRoom.filter(p => {
+        if (p.id === userId) return newPlayerStatus === 'playing'; // Use the new status for current player
+        return p.status === 'playing';
+      });
+
 
       // Check for pot limit reached by any betting action (blind_bet, chaal, raise)
       if (actionType === 'blind_bet' || actionType === 'chaal' || actionType === 'raise') {
@@ -169,61 +182,55 @@ export async function playerAction(
         }
       }
 
-      const remainingPlayers = activePlayerObjects.filter(p => p.id !== userId ? p.status === 'playing' : newPlayerStatus === 'playing');
-      
-      if (remainingPlayers.length === 1 && newPlayerStatus !== 'packed') { 
-          const winner = remainingPlayers[0];
+      // Round End Condition: Only one player remains active
+      if (activePlayerObjects.length === 1) {
+          const winner = activePlayerObjects[0];
           transaction.update(doc(playersCollectionRef, winner.id), {
-            chips: winner.chips + newPot,
-            status: 'ready', isBlind: true, blindTurns: 0,
+            chips: winner.chips + newPot, // Winner gets the pot
+            status: 'waiting', // Reset for next round
+            isBlind: true, 
+            blindTurns: 0,
           });
-           activePlayerObjects.filter(p => p.id !== winner.id).forEach(p => {
-              transaction.update(doc(playersCollectionRef, p.id), { status: 'ready', isBlind: true, blindTurns: 0 });
-           });
+          // Reset other players in the room who might have packed
+          allPlayersInRoom.filter(p => p.id !== winner.id).forEach(p => {
+              transaction.update(doc(playersCollectionRef, p.id), { status: 'waiting', isBlind: true, blindTurns: 0 });
+          });
 
           transaction.update(roomDocRef, {
             status: 'lobby', 
             currentPot: 0,
             lastBet: 0,
             roundCount: currentRoom.roundCount + 1,
-            gameLog: [...newGameLog, { type: 'round_end', message: `${winner.nickname} wins round ${currentRoom.roundCount} with ${newPot} chips!`, playerId: winner.id, timestamp: Date.now() }],
-            currentTurnPlayerId: null,
+            gameLog: [...newGameLog, { type: 'round_end', message: `${winner.nickname} wins round ${currentRoom.roundCount} with ${newPot} chips as the last player standing!`, playerId: winner.id, timestamp: Date.now() }],
+            currentTurnPlayerId: null, // No turn player in lobby
           });
+          return; // End of round
+      } else if (activePlayerObjects.length === 0) {
+          // This case should ideally not be reached if logic is correct, but as a fallback:
+          transaction.update(roomDocRef, { status: 'lobby', gameLog: [...newGameLog, {type: 'error', message: 'No active players left. Pot returned or error state.', timestamp: Date.now()}]});
           return;
-
-      } else if (newPlayerStatus === 'packed') {
-          const stillPlayingAfterPack = activePlayerObjects.filter(p => p.id !== userId && p.status === 'playing');
-          if (stillPlayingAfterPack.length === 1) { 
-                const winner = stillPlayingAfterPack[0];
-                transaction.update(doc(playersCollectionRef, winner.id), {
-                    chips: winner.chips + newPot, status: 'ready', isBlind: true, blindTurns: 0,
-                });
-                transaction.update(playerDocRef, { status: 'ready', isBlind: true, blindTurns: 0 });
-
-                transaction.update(roomDocRef, {
-                    status: 'lobby', currentPot: 0, lastBet: 0, roundCount: currentRoom.roundCount + 1,
-                    gameLog: [...newGameLog, { type: 'round_end_by_pack', message: `${winner.nickname} wins round ${currentRoom.roundCount} as ${currentPlayer.nickname} packed. Pot: ${newPot}.`, playerId: winner.id, timestamp: Date.now() }],
-                    currentTurnPlayerId: null,
-                });
-                return;
-          } else if (stillPlayingAfterPack.length === 0) {
-             transaction.update(roomDocRef, { status: 'lobby', gameLog: [...newGameLog, {type: 'error', message: 'No active players left after pack.', timestamp: Date.now()}]});
-             return;
-          }
       }
 
-      let nextPlayerIdx = (currentPlayerIndexInActive + 1) % activePlayerIdsInOrder.length;
+
+      // Determine Next Player
+      const currentPlayerOrderIndex = playerOrderReference.indexOf(userId);
+      if (currentPlayerOrderIndex === -1) throw new Error("Current player not found in order reference.");
+
+      let nextPlayerOrderIndex = (currentPlayerOrderIndex + 1) % playerOrderReference.length;
       let attempts = 0;
-      while (allPlayersInRoom.find(p => p.id === activePlayerIdsInOrder[nextPlayerIdx])?.status !== 'playing' && attempts < activePlayerIdsInOrder.length) {
-          nextPlayerIdx = (nextPlayerIdx + 1) % activePlayerIdsInOrder.length;
+      // Find the next player who is still 'playing'
+      while(!activePlayerObjects.find(p => p.id === playerOrderReference[nextPlayerOrderIndex]) && attempts < playerOrderReference.length) {
+          nextPlayerOrderIndex = (nextPlayerOrderIndex + 1) % playerOrderReference.length;
           attempts++;
       }
-      if (allPlayersInRoom.find(p => p.id === activePlayerIdsInOrder[nextPlayerIdx])?.status === 'playing') {
-          nextTurnPlayerId = activePlayerIdsInOrder[nextPlayerIdx];
+      
+      if (activePlayerObjects.find(p => p.id === playerOrderReference[nextPlayerOrderIndex])) {
+          nextTurnPlayerId = playerOrderReference[nextPlayerOrderIndex];
       } else {
-          nextTurnPlayerId = null;
+          // Should not happen if there's more than one active player
+          nextTurnPlayerId = null; 
           newGameLog.push({ type: 'error', message: 'Could not determine next player.', timestamp: Date.now()});
-          currentRoom.status = 'lobby'; 
+          currentRoom.status = 'lobby'; // Fallback to lobby on error
       }
 
       transaction.update(roomDocRef, {
@@ -231,7 +238,7 @@ export async function playerAction(
         lastBet: newLastBet,
         gameLog: newGameLog,
         currentTurnPlayerId: nextTurnPlayerId,
-        status: currentRoom.status,
+        status: currentRoom.status, // Keep currentRoom.status unless changed by specific conditions above
       });
     });
     return { success: true, message: 'Action performed.' };
@@ -266,10 +273,10 @@ export async function toggleBlindSeenAction(
     if (currentRoom.status !== 'in-game') {
       return { success: false, message: 'Can only change status during an active game.' };
     }
-    if (currentRoom.currentTurnPlayerId !== userId && currentPlayer.isBlind) {
-      // Allow switching to Seen even if not current turn, if player is blind.
-    } else if (currentRoom.currentTurnPlayerId !== userId) {
-        return { success: false, message: "Not your turn to change seen status this way (already seen)." };
+    // Allow switching to Seen anytime if player is blind, even if not their turn (common house rule flexibility)
+    // However, betting actions are still restricted to current turn.
+    if (currentPlayer.status !== 'playing') {
+        return { success: false, message: "Only playing players can change seen status."};
     }
 
     if (currentPlayer.isBlind) {
@@ -279,6 +286,7 @@ export async function toggleBlindSeenAction(
       });
       return { success: true, message: 'You are now Seen!', isBlind: false };
     } else {
+      // Player is already Seen, cannot switch back to Blind mid-round.
       return { success: false, message: 'You are already Seen. Cannot switch back to Blind mid-round.' };
     }
   } catch (error: any) {
@@ -286,5 +294,3 @@ export async function toggleBlindSeenAction(
     return { success: false, message: error.message || DEFAULT_ERROR_MESSAGE };
   }
 }
-
-    
