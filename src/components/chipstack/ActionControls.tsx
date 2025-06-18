@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState } from 'react';
@@ -132,10 +133,9 @@ export function ActionControls({ room, currentPlayer, activePlayersCount, nonBli
         Pack (Fold)
       </Button>
       
-      {/* Side Show: typically needs at least one other 'seen' player. Original code condition: nonBlindActivePlayersCount < 3 -> disable */}
       <Button
         onClick={() => handleAction('side_show')}
-        disabled={isSubmitting || nonBlindActivePlayersCount < 2 || currentPlayer.isBlind} // Need at least 1 other seen player besides self.
+        disabled={isSubmitting || nonBlindActivePlayersCount < 3 || currentPlayer.isBlind} // Changed from < 2 to < 3
         className="w-full"
         variant="outline"
       >
@@ -143,7 +143,6 @@ export function ActionControls({ room, currentPlayer, activePlayersCount, nonBli
         Side Show
       </Button>
       
-      {/* Show: typically when only 2 players left */}
       <Button
         onClick={() => handleAction('show')}
         disabled={isSubmitting || activePlayersCount !== 2}
@@ -155,3 +154,4 @@ export function ActionControls({ room, currentPlayer, activePlayersCount, nonBli
     </div>
   );
 }
+
