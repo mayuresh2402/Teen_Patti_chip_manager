@@ -59,9 +59,9 @@ export default function SignInPage() {
       } else if (error.code === 'auth/cancelled-popup-request') {
         errorMessage = "Multiple sign-in attempts. Please try again.";
       } else if (error.code === 'auth/unauthorized-domain') {
-        errorMessage = "This domain is not authorized for Google Sign-In. Please contact support or try guest mode. Ensure the current domain is added to Firebase Console > Authentication > Settings > Authorized domains.";
+        errorMessage = "This domain is not authorized for Google Sign-In. Please contact support or try guest mode. Ensure the current domain (e.g., localhost) is added to Firebase Console > Authentication > Settings > Authorized domains.";
       }
-      toast({ title: "Google Sign-In Error", description: errorMessage, variant: "destructive" });
+      toast({ title: "Google Sign-In Error", description: errorMessage, variant: "destructive", duration: 10000 });
     } finally {
       setIsLoading(false);
     }
@@ -185,6 +185,11 @@ export default function SignInPage() {
               >
                 {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (userProfile ? 'Update Profile & Enter' : 'Save Profile & Enter')}
               </Button>
+               {isGuestMode && (
+                 <Button variant="link" onClick={() => {setIsGuestMode(false); if(user && user.isAnonymous) { /* Potentially sign out anonymous user or just clear UI state */ setNicknameInput(''); setSelectedAvatar(PREDEFINED_AVATARS[0]);}}} className="mt-2 w-full">
+                    Back to Sign In Options
+                 </Button>
+                )}
             </>
           )}
         </CardContent>
