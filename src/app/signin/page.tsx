@@ -176,7 +176,7 @@ export default function SignInPage() {
                     <button
                       key={index}
                       onClick={() => setSelectedAvatar(avatar)}
-                      className={`p-2.5 rounded-full text-3xl sm:text-4xl transition-all duration-200 transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-card focus:ring-primary ${selectedAvatar === avatar ? 'bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2 ring-offset-card' : 'bg-muted hover:bg-accent'}`}
+                      className={`p-2 rounded-lg text-2xl sm:text-3xl w-12 h-12 flex items-center justify-center transition-all duration-200 transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-card focus:ring-primary ${selectedAvatar === avatar ? 'bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2 ring-offset-card' : 'bg-muted hover:bg-accent'}`}
                       aria-label={`Select avatar ${avatar}`}
                     >
                       {avatar}
@@ -202,3 +202,4 @@ export default function SignInPage() {
     </div>
   );
 }
+
