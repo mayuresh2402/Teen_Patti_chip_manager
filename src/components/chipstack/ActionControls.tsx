@@ -13,14 +13,15 @@ import { Loader2, Eye, EyeOff, TrendingUp, TrendingDown, Check, X, Users } from 
 interface ActionControlsProps {
   room: Room;
   currentPlayer: Player;
-  activePlayersCount: number; // Number of players with status 'playing'
-  nonBlindActivePlayersCount: number; // Number of non-blind players with status 'playing'
+  activePlayersCount: number; 
+  nonBlindActivePlayersCount: number; 
   onActionLoading: (isLoading: boolean) => void;
 }
 
 export function ActionControls({ room, currentPlayer, activePlayersCount, nonBlindActivePlayersCount, onActionLoading }: ActionControlsProps) {
   const { toast } = useToast();
   const [raiseAmountInput, setRaiseAmountInput] = useState<string>('');
+  const [blindRaiseAmountInput, setBlindRaiseAmountInput] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleAction = async (
@@ -32,7 +33,10 @@ export function ActionControls({ room, currentPlayer, activePlayersCount, nonBli
     const result = await playerAction(room.id, currentPlayer.id, actionType, amount);
     if (result.success) {
       toast({ title: "Action Successful", description: result.message || `Performed ${actionType}.` });
-      if (actionType === 'raise') setRaiseAmountInput('');
+      if (actionType === 'raise') {
+        setRaiseAmountInput('');
+        setBlindRaiseAmountInput('');
+      }
     } else {
       toast({ title: "Action Failed", description: result.message, variant: "destructive" });
     }
@@ -55,11 +59,13 @@ export function ActionControls({ room, currentPlayer, activePlayersCount, nonBli
 
   const currentBetForBlind = room.lastBet === 0 ? room.settings.bootAmount : room.lastBet;
   const currentBetForSeen = room.lastBet === 0 ? room.settings.bootAmount * 2 : room.lastBet * 2;
-  const minRaiseAmount = (currentPlayer.isBlind ? currentBetForBlind : currentBetForSeen) + 1;
+  
+  const minRaiseAmountForSeen = currentBetForSeen + 1;
+  const minRaiseAmountForBlind = currentBetForBlind + 1;
 
 
   if (room.status !== 'in-game' || room.currentTurnPlayerId !== currentPlayer.id || currentPlayer.status === 'packed') {
-    return null; // No actions if not player's turn, game not active, or player packed
+    return null; 
   }
 
   return (
@@ -79,14 +85,39 @@ export function ActionControls({ room, currentPlayer, activePlayersCount, nonBli
       )}
 
       {currentPlayer.isBlind ? (
-        <Button
-          onClick={() => handleAction('blind_bet')}
-          disabled={isSubmitting || currentPlayer.chips < currentBetForBlind}
-          className="w-full bg-yellow-500 hover:bg-yellow-600 text-primary-foreground"
-        >
-          {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <EyeOff className="mr-2 h-4 w-4" />}
-          Blind Bet ({currentBetForBlind})
-        </Button>
+        <>
+          <Button
+            onClick={() => handleAction('blind_bet')}
+            disabled={isSubmitting || currentPlayer.chips < currentBetForBlind}
+            className="w-full bg-yellow-500 hover:bg-yellow-600 text-primary-foreground"
+          >
+            {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <EyeOff className="mr-2 h-4 w-4" />}
+            Blind Bet ({currentBetForBlind})
+          </Button>
+          <div className="flex items-end space-x-2">
+            <div className="flex-grow">
+                <Label htmlFor="blindRaiseAmount" className="text-xs text-muted-foreground">Raise Amount (Blind - min: {minRaiseAmountForBlind})</Label>
+                <Input
+                    id="blindRaiseAmount"
+                    type="number"
+                    value={blindRaiseAmountInput}
+                    onChange={(e) => setBlindRaiseAmountInput(e.target.value)}
+                    placeholder={`Min ${minRaiseAmountForBlind}`}
+                    min={minRaiseAmountForBlind}
+                    disabled={isSubmitting}
+                    className="text-base"
+                />
+            </div>
+            <Button
+              onClick={() => handleAction('raise', Number(blindRaiseAmountInput))}
+              disabled={isSubmitting || !blindRaiseAmountInput || Number(blindRaiseAmountInput) < minRaiseAmountForBlind || Number(blindRaiseAmountInput) > currentPlayer.chips}
+              className="bg-purple-600 hover:bg-purple-700 text-primary-foreground whitespace-nowrap h-10"
+            >
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
+              <span className="ml-1 sm:ml-2">Raise (Blind)</span>
+            </Button>
+          </div>
+        </>
       ) : (
         <>
           <Button
@@ -99,25 +130,25 @@ export function ActionControls({ room, currentPlayer, activePlayersCount, nonBli
           </Button>
           <div className="flex items-end space-x-2">
             <div className="flex-grow">
-                <Label htmlFor="raiseAmount" className="text-xs text-muted-foreground">Raise Amount (min: {minRaiseAmount})</Label>
+                <Label htmlFor="raiseAmount" className="text-xs text-muted-foreground">Raise Amount (Seen - min: {minRaiseAmountForSeen})</Label>
                 <Input
                     id="raiseAmount"
                     type="number"
                     value={raiseAmountInput}
                     onChange={(e) => setRaiseAmountInput(e.target.value)}
-                    placeholder={`Min ${minRaiseAmount}`}
-                    min={minRaiseAmount}
+                    placeholder={`Min ${minRaiseAmountForSeen}`}
+                    min={minRaiseAmountForSeen}
                     disabled={isSubmitting}
                     className="text-base"
                 />
             </div>
             <Button
               onClick={() => handleAction('raise', Number(raiseAmountInput))}
-              disabled={isSubmitting || !raiseAmountInput || Number(raiseAmountInput) < minRaiseAmount || Number(raiseAmountInput) > currentPlayer.chips}
-              className="bg-purple-500 hover:bg-purple-600 text-primary-foreground whitespace-nowrap h-10" // Matched height with input
+              disabled={isSubmitting || !raiseAmountInput || Number(raiseAmountInput) < minRaiseAmountForSeen || Number(raiseAmountInput) > currentPlayer.chips}
+              className="bg-purple-500 hover:bg-purple-600 text-primary-foreground whitespace-nowrap h-10" 
             >
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
-              <span className="ml-1 sm:ml-2">Raise</span>
+              <span className="ml-1 sm:ml-2">Raise (Seen)</span>
             </Button>
           </div>
         </>
@@ -135,7 +166,7 @@ export function ActionControls({ room, currentPlayer, activePlayersCount, nonBli
       
       <Button
         onClick={() => handleAction('side_show')}
-        disabled={isSubmitting || nonBlindActivePlayersCount < 3 || currentPlayer.isBlind} // Changed from < 2 to < 3
+        disabled={isSubmitting || nonBlindActivePlayersCount < 3 || currentPlayer.isBlind} 
         className="w-full"
         variant="outline"
       >
@@ -154,4 +185,3 @@ export function ActionControls({ room, currentPlayer, activePlayersCount, nonBli
     </div>
   );
 }
-

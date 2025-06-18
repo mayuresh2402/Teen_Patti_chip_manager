@@ -1,3 +1,4 @@
+
 "use server";
 
 import { doc, setDoc, getDoc, updateDoc, deleteDoc, runTransaction, collection, getDocs } from 'firebase/firestore';
@@ -41,7 +42,7 @@ export async function createRoomAction(
       nickname: hostNickname,
       chips: Number(settings.startingChips),
       isHost: true,
-      status: 'ready',
+      status: 'ready', // Host starts as ready
       avatar: hostAvatar,
       isBlind: true,
       blindTurns: 0,
@@ -78,8 +79,6 @@ export async function joinRoomAction(
     const roomData = { id: roomSnap.id, ...roomSnap.data() } as Room;
 
     if (roomData.status !== 'lobby') {
-        // Could also allow rejoining active games if desired, but current logic implies lobby only.
-        // For rejoining active games, player's existing state would need to be preserved or reset.
         const playersCollectionRef = collection(firebaseDb, 'artifacts', appId, 'public', 'data', 'rooms', roomData.id, 'players');
         const playerDocSnap = await getDoc(doc(playersCollectionRef, userId));
         if(playerDocSnap.exists()){
@@ -93,7 +92,6 @@ export async function joinRoomAction(
     const playerSnap = await getDoc(playerDocRef);
 
     if (playerSnap.exists()) {
-      // Player is already in the room, just return success
       return { success: true, room: roomData, message: `Rejoined room ${roomData.id}.` };
     }
 
@@ -102,7 +100,7 @@ export async function joinRoomAction(
       nickname,
       chips: Number(roomData.settings.startingChips),
       isHost: false,
-      status: 'ready',
+      status: 'waiting', // New players start as 'waiting'
       avatar,
       isBlind: true,
       blindTurns: 0,
@@ -116,6 +114,52 @@ export async function joinRoomAction(
     return { success: false, message: error.message || 'Failed to join room.' };
   }
 }
+
+export async function togglePlayerLobbyStatusAction(
+  roomId: string,
+  userId: string
+): Promise<{ success: boolean; message?: string; newStatus?: Player['status'] }> {
+  if (!firebaseDb || !roomId || !userId) {
+    return { success: false, message: 'Missing required fields.' };
+  }
+
+  const playerDocRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'rooms', roomId, 'players', userId);
+  const roomDocRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+
+  try {
+    const playerSnap = await getDoc(playerDocRef);
+    const roomSnap = await getDoc(roomDocRef);
+
+    if (!playerSnap.exists() || !roomSnap.exists()) {
+      return { success: false, message: 'Player or room not found.' };
+    }
+    
+    const currentPlayer = playerSnap.data() as Player;
+    const currentRoom = roomSnap.data() as Room;
+
+    if (currentRoom.status !== 'lobby' && currentRoom.status !== 'round_end') { // Allow status change also after round end
+      return { success: false, message: 'Can only change ready status in the lobby or between rounds.' };
+    }
+
+    const newStatus = currentPlayer.status === 'ready' ? 'waiting' : 'ready';
+    await updateDoc(playerDocRef, { status: newStatus, lastSeen: Date.now() });
+
+    // Add to game log
+    const updatedGameLog = [...currentRoom.gameLog, {
+      type: 'player_status_change',
+      message: `${currentPlayer.nickname} is now ${newStatus}.`,
+      playerId: userId,
+      timestamp: Date.now()
+    }];
+    await updateDoc(roomDocRef, { gameLog: updatedGameLog });
+
+    return { success: true, message: `You are now ${newStatus}.`, newStatus };
+  } catch (error: any) {
+    console.error("Error toggling player lobby status:", error);
+    return { success: false, message: error.message || DEFAULT_ERROR_MESSAGE };
+  }
+}
+
 
 export async function startGameAction(
   roomId: string,
@@ -137,34 +181,44 @@ export async function startGameAction(
 
     const playersQuerySnap = await getDocs(playersCollectionRef);
     const playersInRoom: Player[] = playersQuerySnap.docs.map(d => ({ id: d.id, ...d.data() } as Player));
-
-    if (playersInRoom.length < 2) {
-        return { success: false, message: 'At least 2 players are needed to start the game.' };
+    
+    const readyPlayers = playersInRoom.filter(p => p.status === 'ready');
+    if (readyPlayers.length < 2) {
+        return { success: false, message: 'At least 2 players must be "ready" to start the game.' };
     }
     
-    const initialTurnPlayerId = playersInRoom[0]?.id; // Or a random player
+    // Determine turn order based on ready players only, could be shuffled or host first.
+    // For simplicity, first ready player in the current list (order of joining/host).
+    const initialTurnPlayerId = readyPlayers[0]?.id; 
     if (!initialTurnPlayerId) {
-        return { success: false, message: 'No players found to start the game.' };
+        return { success: false, message: 'No ready players found to start the game.' };
     }
 
     await runTransaction(firebaseDb, async (transaction) => {
         transaction.update(roomDocRef, {
             status: 'in-game',
             currentTurnPlayerId: initialTurnPlayerId,
-            roundCount: 1,
-            currentPot: roomData.settings.bootAmount * playersInRoom.length,
+            roundCount: roomData.status === 'lobby' ? 1 : roomData.roundCount, // Keep roundCount if starting next round
+            currentPot: roomData.settings.bootAmount * readyPlayers.length,
             lastBet: roomData.settings.bootAmount,
-            gameLog: [{ type: 'game_start', message: `Game started by ${playersInRoom.find(p=>p.id === hostId)?.nickname}. Boot amount: ${roomData.settings.bootAmount}`, timestamp: Date.now() }],
+            gameLog: [...roomData.gameLog, { type: 'game_start', message: `Round ${roomData.status === 'lobby' ? 1 : roomData.roundCount} started by ${playersInRoom.find(p=>p.id === hostId)?.nickname}. Boot: ${roomData.settings.bootAmount}`, timestamp: Date.now() }],
         });
 
+        // Only affect ready players for boot deduction and status change
         for (const player of playersInRoom) {
             const playerDocRef = doc(playersCollectionRef, player.id);
-            transaction.update(playerDocRef, {
-            chips: player.chips - roomData.settings.bootAmount,
-            status: 'playing',
-            isBlind: true,
-            blindTurns: 0,
-            });
+            if (player.status === 'ready') {
+                transaction.update(playerDocRef, {
+                    chips: player.chips - roomData.settings.bootAmount,
+                    status: 'playing',
+                    isBlind: true,
+                    blindTurns: 0,
+                });
+            } else {
+                // Players who were not ready (e.g. 'waiting' or other states) remain as they are, or could be set to 'waiting'
+                // For now, they just don't participate in this round if not 'ready'
+                 transaction.update(playerDocRef, { status: 'waiting' }); // Ensure non-ready players are 'waiting'
+            }
         }
     });
     
@@ -253,21 +307,26 @@ export async function declareWinnerAction(
         chips: winnerPlayer.chips + currentRoom.currentPot,
       });
 
-      const playersQuerySnap = await getDocs(playersCollectionRef); // Get all players again inside transaction for fresh data
+      const playersQuerySnap = await getDocs(playersCollectionRef); 
       playersQuerySnap.forEach(playerDoc => {
         const playerRef = doc(playersCollectionRef, playerDoc.id);
-        transaction.update(playerRef, {
-          status: 'ready', // Reset status for next round
-          isBlind: true,
-          blindTurns: 0,
-        });
+        // Only reset status to 'waiting' if player is still in the room (not kicked)
+        // And if player was 'playing' or 'packed'. Those already 'ready' or 'waiting' keep their status.
+        const pData = playerDoc.data() as Player;
+        if (pData.status === 'playing' || pData.status === 'packed') {
+          transaction.update(playerRef, {
+            status: 'waiting', // Reset status to 'waiting' for next round's ready check
+            isBlind: true,
+            blindTurns: 0,
+          });
+        }
       });
       
       const newRoundCount = currentRoom.roundCount + 1;
-      const gameEnded = newRoundCount > currentRoom.settings.numRounds && currentRoom.settings.numRounds !== 999; // 999 for unlimited
+      const gameEnded = newRoundCount > currentRoom.settings.numRounds && currentRoom.settings.numRounds !== 999; 
 
       transaction.update(roomDocRef, {
-        status: gameEnded ? 'round_end' : 'lobby', // Or 'game_over' if it's the final round
+        status: gameEnded ? 'round_end' : 'lobby', // Go to lobby for players to ready up
         currentPot: 0,
         lastBet: 0,
         roundCount: newRoundCount, 
@@ -291,7 +350,7 @@ export async function declareWinnerAction(
 
 
 export async function getPredictedWinnerAction(
-  roomId: string, // Keep roomId for context, though AI input might not need it directly
+  roomId: string, 
   gameLog: GameLogEntry[],
   players: Player[]
 ): Promise<{ success: boolean; prediction?: PredictWinnerOutput; message?: string }> {
@@ -300,7 +359,7 @@ export async function getPredictedWinnerAction(
   }
 
   const aiInput: PredictWinnerInput = {
-    gameLog: gameLog.map(log => ({ // Ensure AI input matches Zod schema
+    gameLog: gameLog.map(log => ({ 
         type: log.type,
         message: log.message,
         playerId: log.playerId,
@@ -326,3 +385,4 @@ export async function getPredictedWinnerAction(
     return { success: false, message: error.message || 'Failed to get AI prediction.' };
   }
 }
+

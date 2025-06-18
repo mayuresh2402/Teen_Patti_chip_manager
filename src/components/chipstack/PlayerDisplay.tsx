@@ -5,7 +5,7 @@ import React from 'react';
 import type { Player } from "@/types/chipstack";
 import { cn } from "@/lib/utils";
 import { AvatarDisplay } from '@/components/chipstack/AvatarDisplay';
-import { Crown, UserCircle, CheckCircle, XCircle, Eye, EyeOff, Hourglass } from "lucide-react";
+import { Crown, UserCircle, CheckCircle, XCircle, Eye, EyeOff, Hourglass, AlertTriangle } from "lucide-react";
 
 interface PlayerDisplayProps {
   player: Player;
@@ -28,7 +28,7 @@ const PlayerDisplayComponent = ({ player, isCurrentUser, isCurrentTurn, onKick, 
       case 'playing': return <CheckCircle className="h-5 w-5 text-green-600" />;
       case 'packed': return <XCircle className="h-5 w-5 text-red-500" />;
       case 'ready': return <UserCircle className="h-5 w-5 text-blue-500" />;
-      case 'waiting': return <Hourglass className="h-5 w-5 text-yellow-500" />;
+      case 'waiting': return <AlertTriangle className="h-5 w-5 text-yellow-600" />; // Changed icon for 'waiting'
       default: return null;
     }
   }
@@ -51,7 +51,7 @@ const PlayerDisplayComponent = ({ player, isCurrentUser, isCurrentTurn, onKick, 
             {player.isHost && <Crown className="ml-1.5 h-4 w-4 text-yellow-500" title="Host" />}
           </p>
           <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-            {player.status !== 'packed' && (player.isBlind ? 
+            {player.status !== 'packed' && player.status !== 'ready' && player.status !== 'waiting' && (player.isBlind ? 
               <span className="flex items-center"><EyeOff className="mr-1 h-3 w-3" /> Blind ({player.blindTurns})</span> : 
               <span className="flex items-center"><Eye className="mr-1 h-3 w-3" /> Seen</span>
             )}
@@ -65,7 +65,7 @@ const PlayerDisplayComponent = ({ player, isCurrentUser, isCurrentTurn, onKick, 
         {isHostView && !player.isHost && onKick && (
           <button
             onClick={() => onKick(player.id)}
-            className="text-destructive-foreground/70 hover:text-destructive-foreground text-xs mt-1 p-1 rounded hover:bg-destructive/20 transition-colors"
+            className="text-destructive hover:text-destructive-foreground text-xs mt-1 p-1 rounded hover:bg-destructive/80 transition-colors"
             title="Kick Player"
             aria-label={`Kick ${player.nickname}`}
           >

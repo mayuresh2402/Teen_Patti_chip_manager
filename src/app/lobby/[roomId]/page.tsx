@@ -10,11 +10,13 @@ import type { Room, Player } from '@/types/chipstack';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { startGameAction, kickPlayerAction } from '@/app/actions/room';
+import { startGameAction, kickPlayerAction, togglePlayerLobbyStatusAction } from '@/app/actions/room';
 import { PlayerDisplay } from '@/components/chipstack/PlayerDisplay';
 import { AvatarDisplay } from '@/components/chipstack/AvatarDisplay';
-import { ArrowLeft, Copy, Users, Play, LogOut, Trash2, Loader2, Crown } from 'lucide-react';
+import { ArrowLeft, Copy, Users, Play, LogOut, Trash2, Loader2, Crown, CheckSquare, Square } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
 
 export default function LobbyPage() {
   const router = useRouter();
@@ -67,7 +69,6 @@ export default function LobbyPage() {
       const players = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Player));
       setPlayersInRoom(players);
       
-      // Access currentRoomData from state for this check
       if (isAuthReady && !isLoadingProfile && userId && roomData && !players.find(p => p.id === userId)) {
          if (roomData.status !== 'lobby' && (roomData.status !== 'round_end' || (roomData.settings.numRounds !== 999 && roomData.roundCount <= roomData.settings.numRounds))) {
             toast({ title: "Removed", description: "You are no longer in this room.", variant: "destructive" });
@@ -83,7 +84,7 @@ export default function LobbyPage() {
       unsubscribeRoom();
       unsubscribePlayers();
     };
-  }, [roomId, userId, userProfile, appId, router, toast, isAuthReady, isLoadingProfile]); // Removed roomData from this array
+  }, [roomId, userId, userProfile, appId, router, toast, isAuthReady, isLoadingProfile]);
 
 
   const handleStartGame = async () => {
@@ -91,8 +92,9 @@ export default function LobbyPage() {
       toast({ title: "Error", description: "You are not the host or room data is missing.", variant: "destructive" });
       return;
     }
-    if (playersInRoom.length < 2) {
-      toast({ title: "Not Enough Players", description: "At least 2 players are needed to start.", variant: "destructive" });
+    const readyPlayersCount = playersInRoom.filter(p => p.status === 'ready').length;
+    if (readyPlayersCount < 2) {
+      toast({ title: "Not Enough Ready Players", description: "At least 2 players must be 'Ready' to start.", variant: "destructive" });
       return;
     }
 
@@ -102,7 +104,6 @@ export default function LobbyPage() {
 
     if (result.success) {
       toast({ title: "Game Starting!", description: result.message });
-      // Navigation to /game/[roomId] will be handled by the roomData status listener
     } else {
       toast({ title: "Error", description: result.message || "Failed to start game.", variant: "destructive" });
     }
@@ -136,6 +137,18 @@ export default function LobbyPage() {
     router.push('/home');
   };
 
+  const handleToggleReady = async () => {
+    if (!userId) return;
+    setIsLoadingAction(true);
+    const result = await togglePlayerLobbyStatusAction(roomId, userId);
+    setIsLoadingAction(false);
+    if (result.success) {
+      toast({ title: `Status Updated: ${result.newStatus?.toUpperCase()}`, description: result.message });
+    } else {
+      toast({ title: "Error Updating Status", description: result.message, variant: "destructive" });
+    }
+  };
+
   const copyRoomCode = () => {
     if (!roomId) return;
     navigator.clipboard.writeText(roomId)
@@ -163,6 +176,8 @@ export default function LobbyPage() {
   
   const isHost = roomData.hostId === userId;
   const hostPlayer = playersInRoom.find(p => p.id === roomData.hostId);
+  const currentPlayer = playersInRoom.find(p => p.id === userId);
+  const isGameFullyOver = roomData.status === 'round_end' && (roomData.settings.numRounds !== 999 && roomData.roundCount > roomData.settings.numRounds);
 
   return (
     <div className="flex flex-col items-center min-h-screen bg-background text-foreground p-4 sm:p-6">
@@ -192,11 +207,12 @@ export default function LobbyPage() {
           <div className="mb-6">
             <h3 className="text-xl font-semibold mb-3 text-foreground/90 flex items-center">
               <Users className="mr-2 h-5 w-5 text-accent" /> Players ({playersInRoom.length})
+              <span className="ml-auto text-sm text-muted-foreground">Ready: {playersInRoom.filter(p => p.status === 'ready').length}</span>
             </h3>
             {playersInRoom.length === 0 ? (
               <p className="text-muted-foreground text-center py-4">No players yet. Share the room code!</p>
             ) : (
-              <ScrollArea className="h-[calc(100vh-450px)] sm:h-[300px] md:min-h-[200px] pr-3">
+              <ScrollArea className="h-[calc(100vh-550px)] sm:h-[250px] md:min-h-[180px] pr-3">
                 <ul className="space-y-3">
                   {playersInRoom.map((player) => (
                     <li key={player.id}>
@@ -213,44 +229,44 @@ export default function LobbyPage() {
             )}
           </div>
 
-          {isHost && roomData.status === 'lobby' && (
-            <div className="mt-6 border-t border-border pt-6">
-              <h3 className="text-xl font-semibold mb-3 text-center text-foreground/90">Host Controls</h3>
+          {!isGameFullyOver && currentPlayer && (roomData.status === 'lobby' || roomData.status === 'round_end') && (
+            <Button
+              onClick={handleToggleReady}
+              disabled={isLoadingAction}
+              variant={currentPlayer.status === 'ready' ? "default" : "outline"}
+              className="w-full text-md py-2.5 mb-4"
+            >
+              {isLoadingAction ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : (currentPlayer.status === 'ready' ? <CheckSquare className="mr-2 h-5 w-5" /> : <Square className="mr-2 h-5 w-5" />)}
+              {currentPlayer.status === 'ready' ? 'You are Ready' : 'Mark as Ready'}
+            </Button>
+          )}
+
+
+          {isHost && (roomData.status === 'lobby' || (roomData.status === 'round_end' && !isGameFullyOver)) && (
+            <div className="mt-2 border-t border-border pt-4">
+              <h3 className="text-lg font-semibold mb-2 text-center text-foreground/90">Host Controls</h3>
               <Button
                 onClick={handleStartGame}
-                disabled={isLoadingAction || playersInRoom.length < 2}
+                disabled={isLoadingAction || playersInRoom.filter(p => p.status === 'ready').length < 2}
                 className="w-full text-lg py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-primary-foreground"
               >
                 {isLoadingAction ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Play className="mr-2 h-5 w-5" />}
-                Start Game
+                {roomData.status === 'lobby' ? `Start Game (Round ${roomData.roundCount + 1})` : `Start Next Round (${roomData.roundCount})`}
               </Button>
-              {playersInRoom.length < 2 && <p className="text-xs text-destructive text-center mt-2">Need at least 2 players to start.</p>}
+              {playersInRoom.filter(p => p.status === 'ready').length < 2 && <p className="text-xs text-destructive text-center mt-2">Need at least 2 "Ready" players to start.</p>}
             </div>
           )}
           
-          {roomData.status === 'round_end' && (roomData.settings.numRounds === 999 || roomData.roundCount <= roomData.settings.numRounds) && roomData.hostId === userId && (
-             <div className="mt-6 border-t border-border pt-6 text-center">
-                <h3 className="text-xl font-semibold mb-3 text-foreground/90">Round {roomData.roundCount -1} Ended</h3>
-                <p className="text-muted-foreground mb-3">Ready for the next round?</p>
-                 <Button
-                    onClick={handleStartGame} 
-                    disabled={isLoadingAction || playersInRoom.length < 2}
-                    className="w-full text-lg py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-primary-foreground"
-                >
-                    {isLoadingAction ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Play className="mr-2 h-5 w-5" />}
-                    Start Next Round ({roomData.roundCount})
-                </Button>
-                {playersInRoom.length < 2 && <p className="text-xs text-destructive text-center mt-2">Need at least 2 players.</p>}
-             </div>
+          {isGameFullyOver && (
+             <Alert variant="default" className="my-4 border-primary">
+                <Crown className="h-4 w-4 text-primary" />
+                <AlertTitle>Game Over!</AlertTitle>
+                <AlertDescription>
+                    All {roomData.settings.numRounds} rounds have been played. Thanks for playing!
+                     You can leave the room or the host can create a new game.
+                </AlertDescription>
+            </Alert>
           )}
-
-          {roomData.status === 'round_end' && (roomData.settings.numRounds !== 999 && roomData.roundCount > roomData.settings.numRounds) && (
-             <div className="mt-6 border-t border-border pt-6 text-center">
-                <h3 className="text-xl font-semibold mb-3 text-foreground/90">Game Over!</h3>
-                <p className="text-muted-foreground">All {roomData.settings.numRounds} rounds played. Thanks for playing!</p>
-             </div>
-          )}
-
 
           <Button
             onClick={handleLeaveRoom}
@@ -259,8 +275,10 @@ export default function LobbyPage() {
             disabled={isLoadingAction}
           >
             <LogOut className="mr-2 h-5 w-5" />
-            {isHost ? 'Leave Room (Does Not End Game)' : 'Leave Room'}
+            {isHost && !isGameFullyOver ? 'Leave Room (Ends Game for All)' : 'Leave Room'} 
+            {/* Simplified Host Leave Logic: For now, host leaving implies room closure or could be more nuanced */}
           </Button>
+          {isHost && !isGameFullyOver && <p className="text-xs text-muted-foreground text-center mt-1">If the host leaves, the room might be closed.</p>}
         </CardContent>
       </Card>
     </div>
