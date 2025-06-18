@@ -6,20 +6,38 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { db as firebaseDb } from '@/lib/firebase';
 import { doc, onSnapshot, collection } from 'firebase/firestore';
-import type { Room, Player, GameLogEntry } from '@/types/chipstack';
+import type { Room, Player } from '@/types/chipstack';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { playerAction } from '@/app/actions/game';
 import { PlayerDisplay } from '@/components/chipstack/PlayerDisplay';
 import { GameLogDisplay } from '@/components/chipstack/GameLogDisplay';
 import { ActionControls } from '@/components/chipstack/ActionControls';
-import { WinnerDeclaration } from '@/components/chipstack/WinnerDeclaration';
+// import { WinnerDeclaration } from '@/components/chipstack/WinnerDeclaration'; // Will be dynamically imported
+// import { HostSettingsPanel } from '@/components/chipstack/HostSettingsPanel'; // Will be dynamically imported
 import { TurnTimerDisplay } from '@/components/chipstack/TurnTimerDisplay';
-import { HostSettingsPanel } from '@/components/chipstack/HostSettingsPanel';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ArrowLeft, Loader2, Info, SlidersHorizontal } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import dynamic from 'next/dynamic';
+
+const HostSettingsPanel = dynamic(() =>
+  import('@/components/chipstack/HostSettingsPanel').then((mod) => mod.HostSettingsPanel),
+  { 
+    ssr: false, 
+    loading: () => <div className="flex justify-center items-center p-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /> <span className="ml-2">Loading Settings...</span></div> 
+  }
+);
+
+const WinnerDeclaration = dynamic(() =>
+  import('@/components/chipstack/WinnerDeclaration').then((mod) => mod.WinnerDeclaration),
+  { 
+    ssr: false, 
+    loading: () => <div className="flex justify-center items-center p-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /> <span className="ml-2">Loading Declaration Options...</span></div>
+  }
+);
+
 
 export default function GamePage() {
   const router = useRouter();
@@ -62,8 +80,8 @@ export default function GamePage() {
           router.replace(`/lobby/${roomId}`);
         }
       } else {
-        setRoomData(null);
-        setPlayersInRoom([]);
+        // setRoomData(null); // Already handled by the component's initial state or further logic
+        // setPlayersInRoom([]);
         toast({ title: "Room Closed", description: "This room no longer exists.", variant: "destructive" });
         router.replace('/home');
       }
@@ -78,6 +96,10 @@ export default function GamePage() {
       const players = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Player));
       setPlayersInRoom(players);
       
+      // Access current roomData from state inside this snapshot listener
+      // Need to use functional update for setRoomData if we were to set it here,
+      // or rely on the fact that roomData state is updated by its own listener.
+      // For this specific check, using the `roomData` state variable is fine.
       if (roomData && roomData.status === 'in-game' && userId && !players.find(p => p.id === userId)) {
          toast({ title: "Removed", description: "You are no longer in this game.", variant: "destructive" });
          router.replace('/home');
@@ -233,4 +255,3 @@ export default function GamePage() {
     </div>
   );
 }
-

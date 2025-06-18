@@ -13,6 +13,7 @@ import { saveUserProfile } from '@/app/actions/profile';
 import { useToast } from '@/hooks/use-toast';
 import { AvatarDisplay } from '@/components/chipstack/AvatarDisplay';
 import { Loader2 } from 'lucide-react';
+import Image from 'next/image';
 
 export default function SignInPage() {
   const router = useRouter();
@@ -129,7 +130,7 @@ export default function SignInPage() {
                 className="w-full"
                 variant="outline"
               >
-                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <img src="https://img.icons8.com/color/24/000000/google-logo.png" alt="Google" className="mr-2 h-5 w-5" />}
+                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Image src="https://img.icons8.com/color/24/000000/google-logo.png" alt="Google" width={20} height={20} className="mr-2 h-5 w-5" />}
                 {isLoading ? 'Signing In...' : 'Sign in with Google'}
               </Button>
               <p className="text-xs text-muted-foreground text-center">Google Sign-In might be affected by domain authorization settings in Firebase.</p>
