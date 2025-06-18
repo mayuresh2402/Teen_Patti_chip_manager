@@ -11,8 +11,9 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFo
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { updateRoomSettingsAction, updatePlayerChipsAction } from '@/app/actions/room';
-import { Loader2, Settings2, User, Coins, Save, AlertCircle } from 'lucide-react';
+import { Loader2, Settings2, Coins, Save, AlertCircle, LogOut } from 'lucide-react';
 import { AvatarDisplay } from './AvatarDisplay';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
 interface HostSettingsPanelProps {
   room: Room;
@@ -20,12 +21,15 @@ interface HostSettingsPanelProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   currentUserId: string;
+  isHost: boolean; // New prop
 }
 
-export function HostSettingsPanel({ room, players, isOpen, onOpenChange, currentUserId }: HostSettingsPanelProps) {
+export function HostSettingsPanel({ room, players, isOpen, onOpenChange, currentUserId, isHost }: HostSettingsPanelProps) {
   const { toast } = useToast();
+  const { logout } = useAuth(); // Get logout function from AuthContext
   const [isSubmittingSettings, setIsSubmittingSettings] = useState(false);
   const [isSubmittingChips, setIsSubmittingChips] = useState<Record<string, boolean>>({});
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   // Room settings state
   const [editableMaxPotLimit, setEditableMaxPotLimit] = useState(room.settings.maxPotLimit);
@@ -47,7 +51,7 @@ export function HostSettingsPanel({ room, players, isOpen, onOpenChange, current
   }, [isOpen, room.settings, players]);
 
   const handleUpdateRoomSettings = async () => {
-    if (room.hostId !== currentUserId) {
+    if (!isHost) {
       toast({ title: "Unauthorized", description: "Only the host can change room settings.", variant: "destructive" });
       return;
     }
@@ -63,7 +67,6 @@ export function HostSettingsPanel({ room, players, isOpen, onOpenChange, current
         toast({ title: "Invalid Number of Rounds", description: "Number of rounds must be positive or 999 for unlimited.", variant: "destructive" });
         return;
     }
-
 
     setIsSubmittingSettings(true);
     const settingsToUpdate: Partial<RoomSettings> = {
@@ -81,7 +84,7 @@ export function HostSettingsPanel({ room, players, isOpen, onOpenChange, current
   };
 
   const handleUpdatePlayerChips = async (playerId: string) => {
-    if (room.hostId !== currentUserId) {
+    if (!isHost) {
       toast({ title: "Unauthorized", description: "Only the host can change player chips.", variant: "destructive" });
       return;
     }
@@ -111,110 +114,142 @@ export function HostSettingsPanel({ room, players, isOpen, onOpenChange, current
     setEditablePlayerChips(prev => ({...prev, [playerId]: value}));
   }
 
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      toast({ title: "Logged Out", description: "You have been successfully logged out." });
+      onOpenChange(false); // Close panel on logout
+      // Navigation will be handled by AuthContext listeners
+    } catch (error: any) {
+      toast({ title: "Logout Failed", description: error.message || "Could not log out.", variant: "destructive" });
+    }
+    setIsLoggingOut(false);
+  };
+
   const isGameActive = room.status === 'in-game';
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-[350px] sm:w-[540px] flex flex-col">
         <SheetHeader>
-          <SheetTitle className="flex items-center"><Settings2 className="mr-2 h-6 w-6 text-primary" /> Host Settings</SheetTitle>
-          <SheetDescription>Manage room settings and player chips. Changes apply immediately.</SheetDescription>
+          <SheetTitle className="flex items-center">
+            <Settings2 className="mr-2 h-6 w-6 text-primary" /> 
+            {isHost ? "Host Settings & Game Options" : "Game Options"}
+          </SheetTitle>
+          <SheetDescription>
+            {isHost ? "Manage room settings, player chips, or log out." : "Log out of your account."}
+          </SheetDescription>
         </SheetHeader>
         
         <ScrollArea className="flex-grow pr-2">
           <div className="space-y-6 py-4">
-            {/* Room Settings Section */}
-            <div>
-              <h3 className="text-lg font-semibold mb-2 text-foreground/90 border-b pb-1">Room Configuration</h3>
-              <div className="space-y-3 p-1">
+            {isHost && (
+              <>
+                {/* Room Settings Section */}
                 <div>
-                  <Label htmlFor="bootAmountDisplay">Boot Amount (Min Bet)</Label>
-                  <Input id="bootAmountDisplay" type="number" value={room.settings.bootAmount} readOnly disabled className="bg-muted/50"/>
-                  <p className="text-xs text-muted-foreground mt-1">Cannot be changed during an active game.</p>
-                </div>
-                <div>
-                  <Label htmlFor="startingChipsDisplay">Starting Chips</Label>
-                  <Input id="startingChipsDisplay" type="number" value={room.settings.startingChips} readOnly disabled className="bg-muted/50" />
-                   <p className="text-xs text-muted-foreground mt-1">Cannot be changed during an active game.</p>
-                </div>
-                <div>
-                  <Label htmlFor="maxPotLimit">Max Pot Limit (0 for no limit)</Label>
-                  <Input
-                    id="maxPotLimit"
-                    type="number"
-                    value={editableMaxPotLimit}
-                    onChange={(e) => setEditableMaxPotLimit(Number(e.target.value))}
-                    min="0"
-                    disabled={isSubmittingSettings}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="numRounds">Number of Rounds</Label>
-                  <Select 
-                    value={String(editableNumRounds)} 
-                    onValueChange={(val) => setEditableNumRounds(Number(val))}
-                    disabled={isSubmittingSettings}
-                  >
-                    <SelectTrigger id="numRounds"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="10">10 Rounds</SelectItem>
-                      <SelectItem value="20">20 Rounds</SelectItem>
-                      <SelectItem value="999">Unlimited Rounds</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button onClick={handleUpdateRoomSettings} disabled={isSubmittingSettings} className="w-full">
-                  {isSubmittingSettings ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                  Save Room Settings
-                </Button>
-                 {isGameActive && (
-                    <div className="flex items-start text-xs text-amber-600 p-2 rounded-md bg-amber-50 border border-amber-200 mt-2">
-                        <AlertCircle className="h-4 w-4 mr-2 shrink-0 mt-0.5" />
-                        <span>Note: Modifying Max Pot Limit or Number of Rounds during an active game might affect current or upcoming rounds.</span>
+                  <h3 className="text-lg font-semibold mb-2 text-foreground/90 border-b pb-1">Room Configuration</h3>
+                  <div className="space-y-3 p-1">
+                    <div>
+                      <Label htmlFor="bootAmountDisplay">Boot Amount (Min Bet)</Label>
+                      <Input id="bootAmountDisplay" type="number" value={room.settings.bootAmount} readOnly disabled className="bg-muted/50"/>
+                      <p className="text-xs text-muted-foreground mt-1">Cannot be changed during an active game.</p>
                     </div>
-                )}
-              </div>
-            </div>
-
-            {/* Player Chip Editor Section */}
-            <div>
-              <h3 className="text-lg font-semibold mb-2 text-foreground/90 border-b pb-1">Player Chip Editor</h3>
-              <div className="space-y-3 p-1">
-                {players.map(player => (
-                  <div key={player.id} className="flex items-center space-x-2 p-2 border rounded-md bg-card/30">
-                    <AvatarDisplay avatar={player.avatar} size="small" />
-                    <Label htmlFor={`chips-${player.id}`} className="flex-grow whitespace-nowrap overflow-hidden text-ellipsis">
-                      {player.nickname}
-                    </Label>
-                    <Input
-                      id={`chips-${player.id}`}
-                      type="number"
-                      value={editablePlayerChips[player.id] || ''}
-                      onChange={(e) => handleChipInputChange(player.id, e.target.value)}
-                      min="0"
-                      className="w-24 text-sm"
-                      disabled={isSubmittingChips[player.id]}
-                    />
-                    <Button 
-                      size="sm" 
-                      onClick={() => handleUpdatePlayerChips(player.id)} 
-                      disabled={isSubmittingChips[player.id] || String(player.chips) === editablePlayerChips[player.id]}
-                      variant="outline"
-                      className="px-2"
-                    >
-                      {isSubmittingChips[player.id] ? <Loader2 className="h-4 w-4 animate-spin" /> : <Coins className="h-4 w-4" />}
-                      <span className="ml-1 hidden sm:inline">Set</span>
+                    <div>
+                      <Label htmlFor="startingChipsDisplay">Starting Chips</Label>
+                      <Input id="startingChipsDisplay" type="number" value={room.settings.startingChips} readOnly disabled className="bg-muted/50" />
+                       <p className="text-xs text-muted-foreground mt-1">Cannot be changed during an active game.</p>
+                    </div>
+                    <div>
+                      <Label htmlFor="maxPotLimit">Max Pot Limit (0 for no limit)</Label>
+                      <Input
+                        id="maxPotLimit"
+                        type="number"
+                        value={editableMaxPotLimit}
+                        onChange={(e) => setEditableMaxPotLimit(Number(e.target.value))}
+                        min="0"
+                        disabled={isSubmittingSettings}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="numRounds">Number of Rounds</Label>
+                      <Select 
+                        value={String(editableNumRounds)} 
+                        onValueChange={(val) => setEditableNumRounds(Number(val))}
+                        disabled={isSubmittingSettings}
+                      >
+                        <SelectTrigger id="numRounds"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10 Rounds</SelectItem>
+                          <SelectItem value="20">20 Rounds</SelectItem>
+                          <SelectItem value="999">Unlimited Rounds</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button onClick={handleUpdateRoomSettings} disabled={isSubmittingSettings} className="w-full">
+                      {isSubmittingSettings ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                      Save Room Settings
                     </Button>
+                     {isGameActive && (
+                        <div className="flex items-start text-xs text-amber-600 p-2 rounded-md bg-amber-50 border border-amber-200 mt-2">
+                            <AlertCircle className="h-4 w-4 mr-2 shrink-0 mt-0.5" />
+                            <span>Note: Modifying Max Pot Limit or Number of Rounds during an active game might affect current or upcoming rounds.</span>
+                        </div>
+                    )}
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
+
+                {/* Player Chip Editor Section */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-2 text-foreground/90 border-b pb-1">Player Chip Editor</h3>
+                  <div className="space-y-3 p-1">
+                    {players.map(player => (
+                      <div key={player.id} className="flex items-center space-x-2 p-2 border rounded-md bg-card/30">
+                        <AvatarDisplay avatar={player.avatar} size="small" />
+                        <Label htmlFor={`chips-${player.id}`} className="flex-grow whitespace-nowrap overflow-hidden text-ellipsis">
+                          {player.nickname}
+                        </Label>
+                        <Input
+                          id={`chips-${player.id}`}
+                          type="number"
+                          value={editablePlayerChips[player.id] || ''}
+                          onChange={(e) => handleChipInputChange(player.id, e.target.value)}
+                          min="0"
+                          className="w-24 text-sm"
+                          disabled={isSubmittingChips[player.id]}
+                        />
+                        <Button 
+                          size="sm" 
+                          onClick={() => handleUpdatePlayerChips(player.id)} 
+                          disabled={isSubmittingChips[player.id] || String(player.chips) === editablePlayerChips[player.id]}
+                          variant="outline"
+                          className="px-2"
+                        >
+                          {isSubmittingChips[player.id] ? <Loader2 className="h-4 w-4 animate-spin" /> : <Coins className="h-4 w-4" />}
+                          <span className="ml-1 hidden sm:inline">Set</span>
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+            {!isHost && <p className="text-sm text-muted-foreground p-4 text-center">Only the host can modify game settings and player chips.</p>}
           </div>
         </ScrollArea>
         
-        <SheetFooter className="mt-auto border-t pt-4">
+        <SheetFooter className="mt-auto border-t pt-4 space-y-2 sm:space-y-0 sm:flex sm:justify-between">
+           <Button
+            variant="destructive"
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            className="w-full sm:w-auto"
+          >
+            {isLoggingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
+            Log Out
+          </Button>
           <SheetClose asChild>
-            <Button variant="outline">Close Panel</Button>
+            <Button variant="outline" className="w-full sm:w-auto">Close Panel</Button>
           </SheetClose>
         </SheetFooter>
       </SheetContent>

@@ -13,8 +13,6 @@ import { playerAction } from '@/app/actions/game';
 import { PlayerDisplay } from '@/components/chipstack/PlayerDisplay';
 import { GameLogDisplay } from '@/components/chipstack/GameLogDisplay';
 import { ActionControls } from '@/components/chipstack/ActionControls';
-// import { WinnerDeclaration } from '@/components/chipstack/WinnerDeclaration'; // Will be dynamically imported
-// import { HostSettingsPanel } from '@/components/chipstack/HostSettingsPanel'; // Will be dynamically imported
 import { TurnTimerDisplay } from '@/components/chipstack/TurnTimerDisplay';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ArrowLeft, Loader2, Info, SlidersHorizontal } from 'lucide-react';
@@ -73,15 +71,13 @@ export default function GamePage() {
         if (currentRoomDataFromSnapshot.status === 'lobby' || currentRoomDataFromSnapshot.status === 'round_end') {
           const finalRound = currentRoomDataFromSnapshot.roundCount > currentRoomDataFromSnapshot.settings.numRounds && currentRoomDataFromSnapshot.settings.numRounds !== 999;
           if (finalRound || (currentRoomDataFromSnapshot.status === 'round_end' && currentRoomDataFromSnapshot.settings.numRounds !== 999 && currentRoomDataFromSnapshot.roundCount > currentRoomDataFromSnapshot.settings.numRounds) ) {
-            toast({ title: "Game Over", description: "The game has concluded. Returning to lobby." });
+            // toast({ title: "Game Over", description: "The game has concluded. Returning to lobby." });
           } else {
-            toast({ title: "Round Ended", description: "Returning to lobby for the next round." });
+            // toast({ title: "Round Ended", description: "Returning to lobby for the next round." });
           }
           router.replace(`/lobby/${roomId}`);
         }
       } else {
-        // setRoomData(null); // Already handled by the component's initial state or further logic
-        // setPlayersInRoom([]);
         toast({ title: "Room Closed", description: "This room no longer exists.", variant: "destructive" });
         router.replace('/home');
       }
@@ -96,10 +92,6 @@ export default function GamePage() {
       const players = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Player));
       setPlayersInRoom(players);
       
-      // Access current roomData from state inside this snapshot listener
-      // Need to use functional update for setRoomData if we were to set it here,
-      // or rely on the fact that roomData state is updated by its own listener.
-      // For this specific check, using the `roomData` state variable is fine.
       if (roomData && roomData.status === 'in-game' && userId && !players.find(p => p.id === userId)) {
          toast({ title: "Removed", description: "You are no longer in this game.", variant: "destructive" });
          router.replace('/home');
@@ -113,7 +105,7 @@ export default function GamePage() {
       unsubscribeRoom();
       unsubscribePlayers();
     };
-  }, [roomId, userId, userProfile, appId, router, toast, isAuthReady, isLoadingProfile]);
+  }, [roomId, userId, appId, router, toast, isAuthReady, isLoadingProfile, userProfile]);
 
 
   const handleTimeout = useCallback(async () => {
@@ -159,22 +151,19 @@ export default function GamePage() {
         <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-primary text-shadow-md text-center">
           {roomData.id} - Round {roomData.roundCount}
         </h2>
-        {isHost ? (
-          <Button variant="ghost" size="icon" onClick={() => setIsSettingsPanelOpen(true)} title="Host Settings">
-            <SlidersHorizontal className="h-5 w-5" />
-          </Button>
-        ) : (
-          <div className="w-10 h-10"> {/* Spacer to keep layout consistent */} </div>
-        )}
+        <Button variant="ghost" size="icon" onClick={() => setIsSettingsPanelOpen(true)} title="Settings / Log Out">
+          <SlidersHorizontal className="h-5 w-5" />
+        </Button>
       </header>
 
-      {isHost && roomData && (
+      {roomData && userId && (
         <HostSettingsPanel
           room={roomData}
           players={playersInRoom}
           isOpen={isSettingsPanelOpen}
           onOpenChange={setIsSettingsPanelOpen}
           currentUserId={userId}
+          isHost={isHost}
         />
       )}
 
