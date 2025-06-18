@@ -3,7 +3,7 @@
 // from the user's original environment.
 // In a typical Next.js app, these would be loaded from environment variables.
 
-export const appId: string = (typeof (globalThis as any).__app_id !== 'undefined' ? (globalThis as any).__app_id : undefined) ?? process.env.NEXT_PUBLIC_FIREBASE_APP_ID ?? 'default-chipstack-app';
+export const appId: string = (typeof (globalThis as any).__app_id !== 'undefined' ? (globalThis as any).__app_id : undefined) ?? process.env.NEXT_PUBLIC_FIREBASE_APP_ID ?? 'teen-patti-chip-manager';
 
 let config;
 try {
@@ -17,11 +17,11 @@ try {
 // Replace with your actual Firebase config.
 export const firebaseConfig = config ?? {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyBFEzWQmzolSNCfP1c1hxE6dral1QqXQ1E",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "YOUR_AUTH_DOMAIN",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "YOUR_PROJECT_ID",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "YOUR_STORAGE_BUCKET",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "YOUR_MESSAGING_SENDER_ID",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID_CONFIG || "YOUR_APP_ID",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "teen-patti-chip-manager.firebaseapp.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "teen-patti-chip-manager",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "teen-patti-chip-manager.appspot.com",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "1013599472463",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID_CONFIG || "1:1013599472463:web:5116b7d3235350224a933a",
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "YOUR_MEASUREMENT_ID"
 };
 
