@@ -1,6 +1,7 @@
 
 "use client";
 
+import React from 'react';
 import type { Player } from "@/types/chipstack";
 import { cn } from "@/lib/utils";
 import { Crown, UserCircle, CheckCircle, XCircle, Eye, EyeOff, Hourglass } from "lucide-react";
@@ -13,7 +14,7 @@ interface PlayerDisplayProps {
   isHostView?: boolean;
 }
 
-export function PlayerDisplay({ player, isCurrentUser, isCurrentTurn, onKick, isHostView }: PlayerDisplayProps) {
+const PlayerDisplayComponent = ({ player, isCurrentUser, isCurrentTurn, onKick, isHostView }: PlayerDisplayProps) => {
   const playerStatusStyles = {
     playing: "bg-green-100 text-green-800 border-green-300",
     packed: "bg-red-100 text-red-700 line-through opacity-70 border-red-300",
@@ -78,3 +79,5 @@ export function PlayerDisplay({ player, isCurrentUser, isCurrentTurn, onKick, is
     </div>
   );
 }
+
+export const PlayerDisplay = React.memo(PlayerDisplayComponent);

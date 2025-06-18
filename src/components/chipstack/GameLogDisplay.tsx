@@ -1,14 +1,15 @@
+
 "use client";
 
 import type { GameLogEntry } from "@/types/chipstack";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 interface GameLogDisplayProps {
   logs: GameLogEntry[];
 }
 
-export function GameLogDisplay({ logs }: GameLogDisplayProps) {
+const GameLogDisplayComponent = ({ logs }: GameLogDisplayProps) => {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -44,3 +45,5 @@ export function GameLogDisplay({ logs }: GameLogDisplayProps) {
     </div>
   );
 }
+
+export const GameLogDisplay = React.memo(GameLogDisplayComponent);
