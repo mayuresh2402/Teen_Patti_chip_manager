@@ -90,7 +90,7 @@ export default function LobbyPage() {
       unsubscribeRoom();
       unsubscribePlayers();
     };
-  }, [roomId, userId, userProfile, appId, router, toast, isAuthReady, isLoadingProfile]);
+  }, [roomId, userId, userProfile, appId, router, toast, isAuthReady, isLoadingProfile, roomData]); // Added roomData to dependency array for the player kick check
 
 
   const handleStartGame = async () => {
@@ -99,8 +99,8 @@ export default function LobbyPage() {
       return;
     }
     const readyPlayersCount = playersInRoom.filter(p => p.status === 'ready').length;
-    if (readyPlayersCount < 2) {
-      toast({ title: "Not Enough Ready Players", description: "At least 2 players must be 'Ready' to start.", variant: "destructive" });
+    if (readyPlayersCount === 0) { // Changed from readyPlayersCount < 2
+      toast({ title: "Not Enough Ready Players", description: "At least 1 player must be 'Ready' to start.", variant: "destructive" });
       return;
     }
 
@@ -191,7 +191,7 @@ export default function LobbyPage() {
   const isHost = roomData.hostId === userId;
   const hostPlayer = playersInRoom.find(p => p.id === roomData.hostId);
   const currentPlayer = playersInRoom.find(p => p.id === userId);
-  const isGameFullyOver = roomData.status === 'round_end' && (roomData.settings.numRounds !== 999 && roomData.roundCount > roomData.settings.numRounds);
+  const isGameFullyOver = roomData.status === 'round_end' && (roomData.settings.numRounds !== 999 && roomData.roundCount >= roomData.settings.numRounds); // Changed > to >= for roundCount comparison
 
   return (
     <div className="flex flex-col items-center min-h-screen bg-background text-foreground p-4 sm:p-6">
@@ -264,13 +264,13 @@ export default function LobbyPage() {
               <h3 className="text-lg font-semibold mb-2 text-center text-foreground/90">Host Controls</h3>
               <Button
                 onClick={handleStartGame}
-                disabled={isLoadingAction || playersInRoom.filter(p => p.status === 'ready').length < 2}
+                disabled={isLoadingAction || playersInRoom.filter(p => p.status === 'ready').length === 0}
                 className="w-full text-lg py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-primary-foreground"
               >
                 {isLoadingAction ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Play className="mr-2 h-5 w-5" />}
                 {roomData.status === 'lobby' ? `Start Game (Round ${roomData.roundCount + 1})` : `Start Next Round (${roomData.roundCount +1})`} 
               </Button>
-              {playersInRoom.filter(p => p.status === 'ready').length < 2 && <p className="text-xs text-destructive text-center mt-2">Need at least 2 "Ready" players to start.</p>}
+              {playersInRoom.filter(p => p.status === 'ready').length === 0 && <p className="text-xs text-destructive text-center mt-2">Need at least 1 "Ready" player to start.</p>}
             </div>
           )}
           

@@ -182,12 +182,12 @@ export async function startGameAction(
     const playersInRoom: Player[] = playersQuerySnap.docs.map(d => ({ id: d.id, ...d.data() } as Player));
     
     const readyPlayers = playersInRoom.filter(p => p.status === 'ready');
-    if (readyPlayers.length < 2) {
-        return { success: false, message: 'At least 2 players must be "ready" to start the game.' };
+    if (readyPlayers.length === 0) { // Changed from readyPlayers.length < 2
+        return { success: false, message: 'At least 1 player must be "ready" to start the game.' };
     }
     
     const initialTurnPlayerId = readyPlayers[0]?.id; 
-    if (!initialTurnPlayerId) {
+    if (!initialTurnPlayerId) { // Should not happen if readyPlayers.length > 0, but good failsafe
         return { success: false, message: 'No ready players found to start the game.' };
     }
 
@@ -197,14 +197,14 @@ export async function startGameAction(
             status: 'in-game',
             currentTurnPlayerId: initialTurnPlayerId,
             roundCount: currentRoundNumber,
-            currentPot: roomData.settings.bootAmount * readyPlayers.length,
+            currentPot: roomData.settings.bootAmount * readyPlayers.length, // Pot based on ready players
             lastBet: roomData.settings.bootAmount,
-            gameLog: [...roomData.gameLog, { type: 'game_start', message: `Round ${currentRoundNumber} started by ${playersInRoom.find(p=>p.id === hostId)?.nickname}. Boot: ${roomData.settings.bootAmount}`, timestamp: Date.now() }],
+            gameLog: [...roomData.gameLog, { type: 'game_start', message: `Round ${currentRoundNumber} started by ${playersInRoom.find(p=>p.id === hostId)?.nickname}. Boot: ${roomData.settings.bootAmount}. Participating: ${readyPlayers.length}`, timestamp: Date.now() }],
         });
 
         for (const player of playersInRoom) {
             const playerDocRef = doc(playersCollectionRef, player.id);
-            if (player.status === 'ready') {
+            if (player.status === 'ready') { // Only process 'ready' players
                 transaction.update(playerDocRef, {
                     chips: player.chips - roomData.settings.bootAmount,
                     status: 'playing',
@@ -212,6 +212,7 @@ export async function startGameAction(
                     blindTurns: 0,
                 });
             } else {
+                 // Players who are 'waiting' remain 'waiting' or their current non-ready status
                  transaction.update(playerDocRef, { status: 'waiting' }); 
             }
         }
@@ -467,3 +468,4 @@ export async function updatePlayerChipsAction(
     return { success: false, message: error.message || DEFAULT_ERROR_MESSAGE };
   }
 }
+
